@@ -357,6 +357,7 @@
     "optionalImageValidator": true,
     "optionalPdfValidator": true,
     "pdfValidator": true,
-    "selectValidator": true
+    "selectValidator": true,
+    "useCashSession": true
   }
 }

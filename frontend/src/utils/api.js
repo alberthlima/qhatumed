@@ -34,6 +34,9 @@ function isTokenExpired(token) {
 
 export const $api = ofetch.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  headers: {
+    'Accept': 'application/json',
+  },
   async onRequest(response) {
     const accessToken = localStorage.getItem("token"); //useCookie('accessToken').value
     if (isTokenExpired(accessToken) && response.request != 'auth/login') {

@@ -1,1 +1,23 @@
 // Write your overrides
+
+/* Ajuste global del selector nativo de calendario para inputs tipo date */
+.v-field__input {
+  position: relative;
+}
+
+input[type="date"] {
+  position: relative;
+  width: 100%;
+  padding-right: 36px !important;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  z-index: 2;
+  opacity: 1;
+  background-color: transparent;
+}

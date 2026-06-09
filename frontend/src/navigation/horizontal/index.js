@@ -4,59 +4,77 @@ export default [
     to: { name: 'dashboard' },
     icon: { icon: 'ri-pie-chart-box-line' },
   },
-  { heading: 'Gestión Documental' },
   {
-    title: 'Gestión de Documentos',
-    icon: { icon: 'ri-file-pdf-2-fill' },
+    title: 'Punto de Venta (POS)',
+    to: { name: 'pos' },
+    icon: { icon: 'ri-shopping-cart-2-line' },
+  },
+  {
+    title: 'Catálogos',
+    icon: { icon: 'ri-medicine-bottle-line' },
     children: [
       {
-        title: 'Categorías',
-        to: 'second-page',
+        title: 'Productos',
+        to: { path: '/productos' },
         icon: { icon: 'ri-radio-button-line' },
       },
       {
-        title: 'Biblioteca',
-        to: 'second-page',
+        title: 'Laboratorios',
+        to: { name: 'laboratorios' },
         icon: { icon: 'ri-radio-button-line' },
+      },
+      {
+        title: 'Formas Farmacéuticas',
+        to: { name: 'formas' },
+        icon: { icon: 'ri-capsule-line' },
+      },
+      {
+        title: 'Presentaciones',
+        to: { name: 'presentaciones' },
+        icon: { icon: 'ri-archive-line' },
+      },
+      {
+        title: 'Proveedores',
+        to: { name: 'proveedores' },
+        icon: { icon: 'ri-truck-line' },
       },
     ],
   },
-  { heading: 'Suscripciones y Clientes' },
   {
-    title: 'Planes',
-    to: { name: 'second-page' },
-    icon: { icon: 'ri-list-check-3' },
+    title: 'Transacciones',
+    icon: { icon: 'ri-truck-line' },
+    children: [
+      {
+        title: 'Mis Compras',
+        to: { name: 'compras' },
+        icon: { icon: 'ri-radio-button-line' },
+      },
+      {
+        title: 'Historial de Ventas',
+        to: { name: 'ventas' },
+        icon: { icon: 'ri-radio-button-line' },
+      },
+      {
+        title: 'Configuración SIAT',
+        to: { name: 'siat-config' },
+        icon: { icon: 'ri-government-line' },
+      },
+    ]
   },
   {
-    title: 'Clientes',
-    to: { name: 'second-page' },
-    icon: { icon: 'ri-group-fill' },
+    title: 'Accesos',
+    icon: { icon: 'ri-shield-user-line' },
+    children: [
+      {
+        title: 'Roles y Permisos',
+        to: { name: 'roles-permisos' },
+        icon: { icon: 'ri-lock-password-line' },
+      },
+      {
+        title: 'Usuarios',
+        to: { name: 'usuarios' },
+        icon: { icon: 'ri-user-settings-line' },
+      },
+    ],
   },
-  {
-    title: 'Suscripciones',
-    to: { name: 'second-page' },
-    icon: { icon: 'ri-cash-fill' },
-  },
-  { heading: 'Reportes' },
-  {
-    title: 'Reporte por cliente',
-    icon: { icon: 'ri-folder-chart-line' },
-    to: 'second-page',
-  },
-  {
-    title: 'Reporte por planes',
-    to: { name: 'second-page' },
-    icon: { icon: 'ri-draft-line' },
-  },
-  { heading: 'Accesos' },
-  {
-    title: 'Roles y Permisos',
-    to: { name: 'roles-permisos' },
-    icon: { icon: 'ri-lock-password-line' },
-  },
-  {
-    title: 'Usuarios',
-    to: { name: 'second-page' },
-    icon: { icon: 'ri-user-settings-line' },
-  },
-]
+];

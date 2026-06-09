@@ -1,0 +1,281 @@
+GUIA DE INICIO MODULOS DE LOGIN Y PERMISOS
+Esta guía tendrá incluida los módulos de usuarios, este tendrá un solo usuario tipo super-admin y permisos definidos para el sistema que requieras.
+Como primer paso se debe definir el menú lateral que tendrá el sistema y los permisos que existirán en el sistema.
+Para cambiar el nombre de templete se modifica el themeConfig.js
+Para cambiar el menú lateral se debe modificar los archivos index.js de horizontal y vertical en src/navigation esto para el frontend.
+Para la iconografía se puede cambiar los iconos en referencia a este link: https://remixicon.com/
+Actualizar el archivo PermissionDemoSeeder.php de api-panel/app/database/seeders, cambiar los permisos ejemplo: acción_modulo o acción-modulo, sin espacios, esto para el backend.
+Para que la migración de las tanblas permisos y usuarios funcione se debe correr el siguiente comando: docker compose exec laravel php artisan db:seed --class=PermissionsDemoSeeder 
+Para solo migrar todo en una nueva base de datos se debe modificar el archivo .env del api y hacer correr el comando: docker compose exec laravel php artisan migrate:fresh –seed esto si estas usando Docker, si no, directo php artisan migrate:fresh –seed
+Copiar este código en databseseeder si queremos hacer correr directo todos los seeders.
+class DatabaseSeeder extends Seeder
+{
+    /**
+     * Seed the application's database.
+     */
+    public function run(): void
+    {
+        // Llamamos al seeder de permisos y roles
+        $this->call([
+            PermissionsDemoSeeder::class,
+        ]);
+    }
+}
+Se ha creado campos adicionales a la tabla users, tales como avatar, surname y role_id, para que funcione hay que hacer un migrater seed con este comando: docker compose exec laravel php artisan migrate:fresh --seed
+Verificar que ingrese mediante insomnia.
+Para la vista de permisos en el modulo de roles, se toma en cuenta este ejemplo:
+export const PERMISOS = [
+    {
+        'name': 'Dashboard',
+        'permisos': [
+            {
+                name: 'Escritorio',
+                permiso: 'escritorio',
+            },
+        ]
+    },
+    {
+        'name': 'Roles',
+        'permisos': [
+            {
+                name: 'Registrar',
+                permiso: 'registrar_rol',
+            },
+            {
+                name: 'Listado',
+                permiso: 'listar_rol',
+            },
+            {
+                name: 'Editar',
+                permiso: 'editar_rol',
+            },
+            {
+                name: 'Eliminar',
+                permiso: 'eliminar_rol',
+            }
+        ]
+    },
+    {
+        'name': 'Usuarios',
+        'permisos': [
+            {
+                name: 'Registrar',
+                permiso: 'registrar_usuario',
+            },
+            {
+                name: 'Listado',
+                permiso: 'listar_usuario',
+            },
+            {
+                name: 'Editar',
+                permiso: 'editar_usuario',
+            },
+            {
+                name: 'Eliminar',
+                permiso: 'eliminar_usuario',
+            }
+        ]
+    },
+    {
+        'name': 'Suscripciones',
+        'permisos': [
+            {
+                name: 'Suscripciones',
+                permiso: 'suscripciones',
+            },
+        ]
+    },
+    {
+        'name': 'Reportes',
+        'permisos': [
+            {
+                name: 'Reportes',
+                permiso: 'reportes',
+            },
+        ]
+    },
+    {
+        'name': 'Categorias',
+        'permisos': [
+            {
+                name: 'Registrar',
+                permiso: 'registrar_categoria',
+            },
+            {
+                name: 'Listado',
+                permiso: 'listar_categoria',
+            },
+            {
+                name: 'Editar',
+                permiso: 'editar_categoria',
+            },
+¿+},
+.            {
+                name: 'Eliminar',
+                permiso: 'eliminar_categoria',
+            },
+        ]
+    },
+    {
+        'name': 'Documentos',
+        'permisos': [
+            {
+                name: 'Registrar',
+                permiso: 'registrar_documento',
+            },
+            {
+                name: 'Listado',
+                permiso: 'listar_documento',
+            },
+            {
+                name: 'Editar',
+                permiso: 'editar_documento',
+            },
+            {
+                name: 'Eliminar',
+                permiso: 'eliminar_documento',
+            },
+        ]
+    },
+    {
+        'name': 'Planes',
+        'permisos': [
+            {
+                name: 'Registrar',
+                permiso: 'registrar_plan',
+            },
+            {
+                name: 'Listado',
+                permiso: 'listar_plan',
+            },
+            {
+                name: 'Editar',
+                permiso: 'editar_plan',
+            },
+            {
+                name: 'Eliminar',
+                permiso: 'eliminar_plan',
+            },
+        ]
+    },
+    {
+        'name': 'Clientes',
+        'permisos': [
+            {
+                name: 'Registrar',
+                permiso: 'registrar_cliente',
+            },
+            {
+                name: 'Listado',
+                permiso: 'listar_cliente',
+            },
+            {
+                name: 'Editar',
+                permiso: 'editar_cliente',
+            },
+            {
+                name: 'Eliminar',
+                permiso: 'eliminar_cliente',
+            },
+        ]
+    },
+];
+12. este array de permisos debe ir como constante en el archivo constans.js de la carpeta utils.
+13. Actualizar la lista de permisos con estos datos:
+export default [
+  {
+    title: 'Escritorio',
+    to: { name: 'dashboard' },
+    permission: "all",
+    icon: { icon: 'ri-pie-chart-box-line' },
+  },
+  { heading: 'Gestión Documental' },
+  {
+    title: 'Gestión de Documentos',
+    icon: { icon: 'ri-file-pdf-2-fill' },
+    children: [
+      {
+        title: 'Categorías',
+        to: 'second-page',
+        permission: 'listar_categoria',
+        icon: { icon: 'ri-radio-button-line' },
+      },
+      {
+        title: 'Biblioteca',
+        to: 'second-page',
+        permission: 'listar_documento',
+        icon: { icon: 'ri-radio-button-line' },
+      },
+    ],
+  },
+  { heading: 'Suscripciones y Clientes' },
+  {
+    title: 'Planes',
+    to: { name: 'second-page' },
+    permission: 'listar_plan',
+    icon: { icon: 'ri-list-check-3' },
+  },
+  {
+    title: 'Clientes',
+    to: { name: 'second-page' },
+    permission: 'listar_cliente',
+    icon: { icon: 'ri-group-fill' },
+  },
+  {
+    title: 'Suscripciones',
+    to: { name: 'second-page' },
+    permission: 'suscripciones',
+    icon: { icon: 'ri-cash-fill' },
+  },
+  { heading: 'Reportes' },
+  {
+    title: 'Reporte por cliente',
+    to: 'second-page',
+    permission: 'reportes',
+    icon: { icon: 'ri-folder-chart-line' },
+  },
+  {
+    title: 'Reporte por planes',
+    to: { name: 'second-page' },
+    permission: 'reportes',
+    icon: { icon: 'ri-draft-line' },
+  },
+  { heading: 'Accesos' },
+  {
+    title: 'Roles y Permisos',
+    to: { name: 'roles-permisos' },
+    permission: 'listar_rol',
+    icon: { icon: 'ri-lock-password-line' },
+  },
+  {
+    title: 'Usuarios',
+    to: { name: 'usuarios' },
+    permission: 'listar_usuario',
+    icon: { icon: 'ri-user-settings-line' },
+  },
+]
+Se a aumentado el dato permission para que cada usuario tenga acceso a lo que se registró en el rol
+ 14. Hacer un storage:link para que las imágenes esten en publico.
+Resumen de Trabajo - SaaS Legal IA
+Se han completado todas las tareas de configuración de permisos, actualización de base de datos y despliegue en GitHub.
+📝 Cambios Realizados
+Backend (Laravel)
+Permissions: Se actualizó 
+PermissionsDemoSeeder.php con las nuevas categorías de permisos (plan, cliente, categoria, documento).
+Database Seeding: Se configuró 
+DatabaseSeeder.php para incluir automáticamente los permisos en cada migración.
+Bug Fix (Login 500): Se corrigió el error "Attempt to read property id on null" añadiendo las columnas faltantes (surname, avatar, role_id) a la tabla users mediante una nueva migración y actualizando el seeder para poblar el role_id del Super-Admin.
+Configuración segura: El seeder está listo para ser ejecutado en entornos Docker.
+Git & GitHub
+Identidad Personal: Se configuró Git localmente para usar la cuenta personal araellima@gmail.com.
+Limpieza de Historial: Se purgaron archivos .zip pesados (más de 100MB) que bloqueaban la subida a GitHub.
+Ignorados: Se actualizó el 
+.gitignore para excluir automáticamente archivos temporales y archivos grandes.
+Repositorio: El código ya está disponible en github.com/alberthlima/saas_legal.
+Documentación
+README.md: Se creó un archivo de presentación profesional con instrucciones de instalación, stack tecnológico y credenciales por defecto.
+🚀 Cómo empezar
+Para levantar el proyecto en un nuevo entorno:
+docker compose up -d
+docker compose exec laravel php artisan migrate:fresh --seed
+¡El proyecto está listo para continuar con el desarrollo!

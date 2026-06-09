@@ -86,7 +86,7 @@ const hideTitleAndIcon = configStore.isVerticalNavMini(isHovered)
           to="/"
           class="app-logo app-title-wrapper"
         >
-          <VNodeRenderer :nodes="layoutConfig.app.logo" />
+          <img src="@images/logo.png" alt="Logo" height="50" width="50" class="w-24 h-24" />
 
           <Transition name="vertical-nav-app-title">
             <h1

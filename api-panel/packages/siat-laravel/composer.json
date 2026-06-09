@@ -1,0 +1,45 @@
+{
+    "name": "misalud/siat-laravel",
+    "description": "SDK PHP/Laravel para integración con el SIAT (Sistema Integrado de Administración Tributaria) de Bolivia. Soporta facturación Computarizada y Electrónica.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Farmacia Misalud Dev",
+            "email": "dev@misalud.bo"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "ext-soap": "*",
+        "ext-openssl": "*",
+        "ext-zlib": "*",
+        "illuminate/support": "^10.0|^11.0|^12.0",
+        "illuminate/cache": "^10.0|^11.0|^12.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Misalud\\Siat\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Misalud\\Siat\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Misalud\\Siat\\SiatServiceProvider"
+            ],
+            "aliases": {
+                "Siat": "Misalud\\Siat\\Facades\\Siat"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

@@ -127,6 +127,11 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        'siat' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/siat.log'),
+            'level' => 'debug',
+        ],
     ],
 
 ];

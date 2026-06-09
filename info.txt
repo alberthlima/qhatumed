@@ -1,0 +1,31 @@
+TABLES:
+arqueo, banco, bitacora_stock, caja, detalle_extra, detalle_inventario, detalle_pedido, detalle_venta, dispenser, distribuidor, distribuidor_linea, enfermedad, forma_farmaceutica, gasto, ingreso, ingreso_caja, inventario_diario, inversion, linea, merma, permiso, persona, producto, producto_enfermedad, programacion, reporte, salida_caja, servicio, sucursal, sugerido, transaccion, usuario, usuario_permiso, utilidad, venta
+
+SCHEMA PRODUCTO:
+
+  `id_producto` int(11) NOT NULL,
+  `id_linea` int(11) NOT NULL,
+  `codigo_producto` varchar(50) DEFAULT NULL,
+  `nombre_producto` varchar(100) NOT NULL,
+  `id_dispenser` int(11) NOT NULL,
+  `cantidad_dispenser_producto` varchar(10) NOT NULL,
+  `id_forma_farmaceutica` int(11) NOT NULL,
+  `indicaciones_producto` varchar(255) NOT NULL,
+  `dosificacion_producto` varchar(255) NOT NULL,
+  `accion_terapeutica_producto` varchar(255) NOT NULL,
+  `principio_activo_producto` varchar(255) NOT NULL,
+  `imagen_producto` varchar(50) NOT NULL DEFAULT 'default.png',
+  `tiempo_producto` int(3) NOT NULL DEFAULT '1',
+  `precio_lista_producto` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `precio_venta_producto` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `condicion_producto` tinyint(4) NOT NULL DEFAULT '1'
+
+
+INSERTS:
+INSERT INTO `producto` (`id_producto`, `id_linea`, `codigo_producto`, `nombre_producto`, `id_dispenser`, `cantidad_dispenser_producto`, `id_forma_farmaceutica`, `indicaciones_producto`, `dosificacion_producto`, `accion_terapeutica_producto`, `principio_activo_producto`, `imagen_producto`, `tiempo_producto`, `precio_lista_producto`, `precio_venta_producto`, `condicion_producto`) VALUES
+(1, 1, 'FPR-01001', 'ACETAZOLAMIDA 250MG', 1, '100', 1, 'NINGUNA', 'NINGUNA', 'NINGUNA', 'NINGUNA', 'default.png', 1, '122.00', '0.00', 1),
+(2, 1, 'FPR-01002', 'ACICLOVIR 200MG', 1, '50', 1, 'NINGUNA', 'NINGUNA', 'NINGUNA', 'NINGUNA', 'default.png', 1, '78.00', '0.00', 1),
+(3, 1, 'FPR-01003', 'ACICLOVIR 400MG', 1, '50', 1, 'NINGUNA', 'NINGUNA', 'NINGUNA', 'NINGUNA', 'default.png', 1, '118.00', '0.00', 1),
+(4, 1, 'FPR-01004', 'ACICLOVIR 800MG', 1, '50', 1, 'NINGUNA', 'NINGUNA', 'NINGUNA', 'NINGUNA', 'default.png', 1, '222.00', '0.00', 1),
+(5, 1, 'FPR-01005', 'ACIDO NALIDIXICO 500MG', 1, '100', 1, 'NINGUNA'...
+TOTAL PRODUCTOS ESTIMADOS: 9173

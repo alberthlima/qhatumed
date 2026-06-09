@@ -3,7 +3,7 @@ import { AppContentLayoutNav, ContentWidth, FooterType, HorizontalNavType, Navba
 export const layoutConfig = {
   app: {
     title: 'my-layout',
-    logo: h('img', { src: '/src/assets/logo.svg' }),
+    logo: h('img', { src: '/src/assets/images/logo.png' }),
     contentWidth: ContentWidth.Boxed,
     contentLayoutNav: AppContentLayoutNav.Vertical,
     overlayNavFromBreakpoint: 1279,

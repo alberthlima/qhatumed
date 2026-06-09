@@ -145,15 +145,6 @@ const authV2LoginIllustration = useGenerateImageVariant(authV2LoginIllustrationL
 </script>
 
 <template>
-  <RouterLink to="/">
-    <div class="app-logo auth-logo">
-      <VNodeRenderer :nodes="themeConfig.app.logo" />
-      <h1 class="app-logo-title">
-        {{ themeConfig.app.title }}
-      </h1>
-    </div>
-  </RouterLink>
-
   <VRow
     no-gutters
     class="auth-wrapper"
@@ -186,9 +177,12 @@ const authV2LoginIllustration = useGenerateImageVariant(authV2LoginIllustrationL
         :max-width="500"
         class="mt-12 mt-sm-0 pa-5 pa-lg-7"
       >
+        <VCardText class="d-flex align-center justify-center">
+          <img src="@images/logo.png" alt="logo" width="200" />
+        </VCardText>
         <VCardText>
           <h4 class="text-h4 mb-1">
-            Bienvenido a <span class="text-capitalize">{{ themeConfig.app.title }}! 👋🏻</span>
+            Bienvenido a <span class="text-capitalize">{{ themeConfig.app.title }}!</span>
           </h4>
 
           <p class="mb-0">
