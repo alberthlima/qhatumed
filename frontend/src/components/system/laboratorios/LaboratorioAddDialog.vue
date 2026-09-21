@@ -35,7 +35,7 @@ const store = async() => {
 
   try {
     isLoading.value = true
-    const response = await $api("/laboratories", {
+    const response = await $api("/v1/laboratories", {
       method: "POST",
       body: formData,
       onResponse({ response }){

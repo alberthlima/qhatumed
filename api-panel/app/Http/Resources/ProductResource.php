@@ -44,6 +44,14 @@ class ProductResource extends JsonResource
             
             // Batches only loaded if explicitly requested (to avoid heavy queries)
             'active_batches' => PurchaseItemResource::collection($this->whenLoaded('activeBatches')),
+
+            // Códigos de barras alternos (para trazabilidad multi-código)
+            'barcodes' => $this->whenLoaded('barcodes', fn () => $this->barcodes->map(fn ($b) => [
+                'id'         => $b->id,
+                'barcode'    => $b->barcode,
+                'note'       => $b->note,
+                'registered' => $b->created_at?->format('d/m/Y'),
+            ])),
         ];
     }
 }

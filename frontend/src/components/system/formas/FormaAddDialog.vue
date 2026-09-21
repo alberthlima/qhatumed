@@ -20,7 +20,7 @@ const store = async() => {
 
   try {
     isLoading.value = true
-    const response = await $api("/pharmaceutical-forms", {
+    const response = await $api("/v1/pharmaceutical-forms", {
       method: "POST",
       body: formData,
       onResponse({ response }){

@@ -89,6 +89,14 @@ class InventoryController extends Controller
         $totalMargin = $totalSale - $totalCost;
         $marginPercent = $totalCost > 0 ? ($totalMargin / $totalCost) * 100 : 0;
 
+        // Costo Total CPP (Weighted Average Cost)
+        $totalCostCpp = DB::table('products')
+            ->where('status', 'ACTIVE')
+            ->where('stock', '>', 0)
+            ->sum(DB::raw('stock * COALESCE(average_cost, 0)'));
+        $totalMarginCpp = $totalSale - $totalCostCpp;
+        $marginPercentCpp = $totalCostCpp > 0 ? ($totalMarginCpp / $totalCostCpp) * 100 : 0;
+
         // Fetch products with their active batches for detailed grid
         $query = Product::with(['laboratory', 'purchaseItems' => function ($q) {
             $q->where('current_stock', '>', 0);
@@ -108,7 +116,7 @@ class InventoryController extends Controller
         // Paginate results
         $products = $query->orderBy('name', 'asc')->paginate($request->per_page ?? 15);
 
-        // Transform results to calculate PEPS valuation per product line
+        // Transform results to calculate PEPS & CPP valuation per product line
         $products->getCollection()->transform(function ($product) {
             $stock = $product->purchaseItems->sum('current_stock');
             $costValuation = $product->purchaseItems->sum(function ($item) {
@@ -122,6 +130,10 @@ class InventoryController extends Controller
             $marginVal = $saleValuation - $costValuation;
             $marginPct = $costValuation > 0 ? ($marginVal / $costValuation) * 100 : 0;
 
+            $cppValuation = $stock * ($product->average_cost ?: 0);
+            $marginValCpp = $saleValuation - $cppValuation;
+            $marginPctCpp = $cppValuation > 0 ? ($marginValCpp / $cppValuation) * 100 : 0;
+
             return [
                 'id' => $product->id,
                 'barcode' => $product->barcode,
@@ -131,18 +143,24 @@ class InventoryController extends Controller
                 'average_cost' => $product->average_cost,
                 'sale_price' => $product->sale_price,
                 'cost_valuation' => round($costValuation, 2),
+                'cpp_valuation' => round($cppValuation, 2),
                 'sale_valuation' => round($saleValuation, 2),
                 'margin_value' => round($marginVal, 2),
-                'margin_percent' => round($marginPct, 2)
+                'margin_percent' => round($marginPct, 2),
+                'margin_value_cpp' => round($marginValCpp, 2),
+                'margin_percent_cpp' => round($marginPctCpp, 2)
             ];
         });
 
         return response()->json([
             'summary' => [
                 'total_cost' => round($totalCost, 2),
+                'total_cost_cpp' => round($totalCostCpp, 2),
                 'total_sale' => round($totalSale, 2),
                 'total_margin' => round($totalMargin, 2),
-                'margin_percent' => round($marginPercent, 2)
+                'margin_percent' => round($marginPercent, 2),
+                'total_margin_cpp' => round($totalMarginCpp, 2),
+                'margin_percent_cpp' => round($marginPercentCpp, 2)
             ],
             'products' => $products
         ]);
@@ -252,16 +270,19 @@ class InventoryController extends Controller
                     'average_cost' => $product->average_cost,
                     'sale_price' => $product->sale_price,
                     'cost_valuation' => $costValuation,
+                    'cpp_valuation' => $stock * ($product->average_cost ?: 0),
                     'sale_valuation' => $saleValuation
                 ];
             });
 
             $totalCost = $productsData->sum('cost_valuation');
+            $totalCostCpp = $productsData->sum('cpp_valuation');
             $totalSale = $productsData->sum('sale_valuation');
 
             $pdf = Pdf::loadView('pdf.inventory_valuation', [
                 'products' => $productsData,
                 'totalCost' => $totalCost,
+                'totalCostCpp' => $totalCostCpp,
                 'totalSale' => $totalSale,
                 'config' => $config
             ]);

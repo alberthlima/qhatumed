@@ -17,180 +17,199 @@ const formData = ref({
   items: []
 })
 
-// CSV Import references
-const csvInput = ref(null)
-const importWarnings = ref([])
-const showImportWarnings = ref(false)
-const importSuccessMessage = ref('')
-const showImportSuccess = ref(false)
+import { nextTick } from 'vue'
+import { Html5Qrcode } from 'html5-qrcode'
 
-const triggerCsvFile = () => {
-  csvInput.value?.click()
+// Scanner and Barcode Association State
+const isScanning = ref(false)
+const isScannerModalOpen = ref(false)
+const html5QrScanner = ref(null)
+const scannedBarcode = ref('')
+
+const isAssociating = ref(false)
+const associateSearchQuery = ref('')
+const associateSearchLoading = ref(false)
+const associateProducts = ref([])
+const selectedProductForAssociation = ref(null)
+
+const playBeep = () => {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    const oscillator = audioCtx.createOscillator()
+    const gainNode = audioCtx.createGain()
+    
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(800, audioCtx.currentTime)
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime)
+    
+    oscillator.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+    
+    oscillator.start()
+    oscillator.stop(audioCtx.currentTime + 0.15)
+  } catch (e) {
+    console.error('Error playing beep:', e)
+  }
 }
 
-const downloadCsvTemplate = async () => {
-  try {
-    isLoading.value = true
-    const response = await $api('/v1/products?per_page=5', { method: 'GET' })
-    const productsList = response.data?.data || response.data || []
-    
-    let csvContent = "Codigo_Barras,Cantidad,Costo_Unitario,Precio_Venta,Lote,Fecha_Vencimiento\n"
-    
-    if (productsList.length > 0) {
-      productsList.forEach((product, idx) => {
-        const barcode = product.barcode || `GENERIC00${idx + 1}`
-        const cost = product.average_cost > 0 ? product.average_cost : 10.00
-        const price = product.sale_price > 0 ? product.sale_price : Number((cost * 1.35).toFixed(2))
-        const sampleDate = new Date()
-        sampleDate.setFullYear(sampleDate.getFullYear() + 2) // Expiration in 2 years
-        const dateStr = sampleDate.toISOString().slice(0, 10)
-        
-        csvContent += `"${barcode}",${10 * (idx + 1)},${cost},${price},"LOTE-EJ-${idx + 1}","${dateStr}"\n`
-      })
-    } else {
-      csvContent += `"7501234567890",50,12.50,16.90,"LOTE-EJ-1","2028-12-31"\n`
-      csvContent += `"7509876543210",100,5.20,7.00,"LOTE-EJ-2","2027-06-30"\n`
+const startScanner = () => {
+  isScannerModalOpen.value = true
+  isScanning.value = true
+  scannedBarcode.value = ''
+  isAssociating.value = false
+  selectedProductForAssociation.value = null
+  
+  nextTick(() => {
+    const qrCodeSuccessCallback = async (decodedText) => {
+      pauseScanner()
+      await handleScannedBarcode(decodedText)
     }
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.setAttribute("href", url)
-    link.setAttribute("download", "plantilla_ejemplo_inventario.csv")
-    link.style.visibility = 'hidden'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  } catch (error) {
-    toast.showError("Error al generar la plantilla de ejemplo.", "Error")
+    html5QrScanner.value = new Html5Qrcode("reader")
+    
+    html5QrScanner.value.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: { width: 250, height: 150 }
+      },
+      qrCodeSuccessCallback,
+      () => {
+        // Ignorar errores de lectura parcial
+      }
+    ).catch((err) => {
+      console.error("Error al iniciar scanner:", err)
+      toast.showError("No se pudo iniciar la cámara. Verifique los permisos e HTTPS.", "Error de Cámara")
+      isScannerModalOpen.value = false
+      isScanning.value = false
+    })
+  })
+}
+
+const pauseScanner = () => {
+  if (html5QrScanner.value && html5QrScanner.value.isScanning) {
+    html5QrScanner.value.pause(true)
+  }
+  isScanning.value = false
+}
+
+const resumeScanner = () => {
+  if (html5QrScanner.value) {
+    html5QrScanner.value.resume()
+  }
+  isScanning.value = true
+  scannedBarcode.value = ''
+  isAssociating.value = false
+  selectedProductForAssociation.value = null
+}
+
+const stopScanner = () => {
+  if (html5QrScanner.value) {
+    html5QrScanner.value.stop().then(() => {
+      html5QrScanner.value = null
+    }).catch(err => {
+      console.error("Error al detener scanner:", err)
+    })
+  }
+  isScannerModalOpen.value = false
+  isScanning.value = false
+  isAssociating.value = false
+  scannedBarcode.value = ''
+}
+
+const addProductToPurchase = (product) => {
+  const exists = formData.value.items.find(i => i.product_id === product.id)
+  if (exists) {
+    exists.quantity += 1
+  } else {
+    formData.value.items.push({
+      product_id: product.id,
+      name: product.name,
+      batch: '',
+      expiration_date: '',
+      quantity: 1,
+      unit_cost: product.average_cost > 0 ? product.average_cost : 0,
+      sale_price: product.sale_price > 0 ? product.sale_price : 0
+    })
+  }
+}
+
+const handleScannedBarcode = async (barcode) => {
+  scannedBarcode.value = barcode.trim()
+  
+  try {
+    isLoading.value = true
+    const response = await $api(`/v1/products?search=${scannedBarcode.value}`, { method: 'GET' })
+    const productsList = response.data?.data || response.data || []
+
+    // Buscar coincidencia en barcode principal O en barcodes alternos
+    const matchedProduct = productsList.find(p =>
+      p.barcode === scannedBarcode.value ||
+      (p.barcodes && p.barcodes.some(b => b.barcode === scannedBarcode.value))
+    )
+    
+    if (matchedProduct) {
+      playBeep()
+      addProductToPurchase(matchedProduct)
+      toast.showSuccess(`Producto "${matchedProduct.name}" agregado.`, "Escaneado")
+      
+      setTimeout(() => {
+        resumeScanner()
+      }, 1000)
+    } else {
+      isAssociating.value = true
+      associateSearchQuery.value = ''
+      associateProducts.value = []
+      selectedProductForAssociation.value = null
+      toast.showWarning(`Código "${scannedBarcode.value}" no registrado. Vincúlelo.`, "No Registrado")
+    }
+  } catch (err) {
+    toast.showError("Error al consultar producto.", "Error")
+    resumeScanner()
   } finally {
     isLoading.value = false
   }
 }
 
-const handleCsvUpload = async (event) => {
-  const file = event.target.files[0]
-  if (!file) return
-
-  // Reset input value
-  event.target.value = ''
-
-  const reader = new FileReader()
-  reader.onload = async (e) => {
-    const text = e.target.result
-    await parseAndAddCsv(text)
-  }
-  reader.readAsText(file, 'UTF-8')
-}
-
-const parseAndAddCsv = async (text) => {
-  const lines = text.split(/\r?\n/)
-  if (lines.length < 2) {
-    toast.showWarning('El archivo CSV está vacío o no tiene el formato correcto.', 'Advertencia')
+const associateBarcodeToProduct = async () => {
+  if (!selectedProductForAssociation.value) {
+    toast.showWarning("Seleccione un producto para asociar.", "Advertencia")
     return
   }
-
-  const headerLine = lines[0].toLowerCase()
-  const delimiter = headerLine.includes(';') ? ';' : ','
-  const headers = headerLine.split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ''))
-
-  const idxBarcode = headers.findIndex(h => h.includes('codigo') || h.includes('barcode') || h.includes('barras') || h.includes('cod'))
-  const idxQty = headers.findIndex(h => h.includes('cant') || h.includes('quantity'))
-  const idxCost = headers.findIndex(h => h.includes('cost') || h.includes('precio') || h.includes('compra'))
-  const idxSalePrice = headers.findIndex(h => h.includes('venta') || h.includes('sale') || h.includes('precio_vta'))
-  const idxBatch = headers.findIndex(h => h.includes('lote') || h.includes('batch'))
-  const idxExp = headers.findIndex(h => h.includes('venc') || h.includes('exp') || h.includes('fecha'))
-
-  if (idxBarcode === -1 || idxQty === -1 || idxCost === -1) {
-    toast.showWarning('No se encontraron las columnas obligatorias en el CSV. El archivo debe contener al menos: Código de barras, Cantidad y Costo Unitario.', 'Advertencia')
-    return
-  }
-
-  const cleanNumberString = (str) => {
-    if (!str) return '';
-    let clean = str.trim();
-    if (clean.includes(',') && clean.includes('.')) {
-      clean = clean.replace(/\./g, '');
-    }
-    clean = clean.replace(',', '.');
-    return clean;
-  }
-
-  isLoading.value = true
-  let addedCount = 0
-  let errorMessages = []
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line) continue
-
-    const cols = line.split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''))
-    if (cols.length < Math.max(idxBarcode, idxQty, idxCost) + 1) continue
-
-    const barcode = cols[idxBarcode]
-    const quantity = parseInt(cols[idxQty])
-    const unitCost = parseFloat(cleanNumberString(cols[idxCost]))
-    const csvSalePrice = idxSalePrice !== -1 ? parseFloat(cleanNumberString(cols[idxSalePrice])) : NaN
-    const batch = idxBatch !== -1 ? cols[idxBatch] : ''
-    const expDate = idxExp !== -1 ? cols[idxExp] : ''
-
-    if (!barcode) continue
-
-    if (isNaN(quantity) || quantity < 1) {
-      errorMessages.push(`Fila ${i + 1}: Cantidad inválida para el producto con código ${barcode}.`)
-      continue
-    }
-    if (isNaN(unitCost) || unitCost < 0) {
-      errorMessages.push(`Fila ${i + 1}: Costo inválido para el producto con código ${barcode}.`)
-      continue
-    }
-
-    try {
-      const response = await $api(`/v1/products?search=${barcode}`, { method: 'GET' })
-      const productsList = response.data?.data || response.data || []
-      const matchedProduct = productsList.find(p => p.barcode === barcode)
-
-      if (!matchedProduct) {
-        errorMessages.push(`Fila ${i + 1}: El código de barras "${barcode}" no está registrado en el catálogo.`)
-        continue
-      }
-
-      const calculatedSalePrice = !isNaN(csvSalePrice) && csvSalePrice >= 0 
-        ? csvSalePrice 
-        : (matchedProduct.sale_price > 0 ? matchedProduct.sale_price : Number((unitCost * 1.35).toFixed(2)))
-
-      const exists = formData.value.items.find(item => item.product_id === matchedProduct.id)
-      if (exists) {
-        exists.quantity += quantity
-        exists.unit_cost = unitCost
-        exists.sale_price = calculatedSalePrice
-        if (batch) exists.batch = batch
-        if (expDate) exists.expiration_date = expDate
-      } else {
-        formData.value.items.push({
-          product_id: matchedProduct.id,
-          name: matchedProduct.name,
-          batch: batch || '',
-          expiration_date: expDate || '',
-          quantity: quantity,
-          unit_cost: unitCost,
-          sale_price: calculatedSalePrice
-        })
-      }
-      addedCount++
-    } catch (err) {
-      errorMessages.push(`Fila ${i + 1}: Error de red al buscar el código ${barcode}.`)
-    }
-  }
-
-  isLoading.value = false
   
-  importWarnings.value = errorMessages
-  showImportWarnings.value = errorMessages.length > 0
-  
-  importSuccessMessage.value = `Se importaron ${addedCount} productos exitosamente.`
-  showImportSuccess.value = addedCount > 0
+  try {
+    isLoading.value = true
+    const productId = selectedProductForAssociation.value.id
+    const response = await $api(`/v1/products/${productId}/associate-barcode`, {
+      method: 'POST',
+      body: { barcode: scannedBarcode.value }
+    })
+    
+    playBeep()
+    const updatedProduct = response.data || response
+    addProductToPurchase(updatedProduct)
+    
+    toast.showSuccess(`Código asociado a "${updatedProduct.name}"`, "Vincular Código")
+    resumeScanner()
+  } catch (err) {
+    const errorMsg = err.response?._data?.message || err.message || "Error al asociar código."
+    toast.showError(errorMsg, "Error")
+  } finally {
+    isLoading.value = false
+  }
 }
+
+watch(associateSearchQuery, async (newVal) => {
+  if (!newVal || newVal.length < 2) return
+  try {
+    associateSearchLoading.value = true
+    const res = await $api(`/v1/products?search=${newVal}`, { method: 'GET' })
+    associateProducts.value = res.data?.data || res.data || []
+  } catch (e) {
+  } finally {
+    associateSearchLoading.value = false
+  }
+})
 
 // Search Field binding
 const productSearch = ref(null)
@@ -297,16 +316,17 @@ definePage({ meta: { permission: 'listar_compra' } })
 </script>
 
 <template>
-  <div class="pa-4">
+  <div class="pa-2 pa-sm-4">
     <VRow>
-      <VCol cols="12" md="10" class="mx-auto">
+      <VCol cols="12" md="10" class="mx-auto px-2 px-sm-3">
 
         <VCard>
-          <VCardTitle class="py-4 bg-primary text-white d-flex align-center">
-            <VIcon icon="ri-truck-line" class="me-2" /> Insertar Compra / Nota de Ingreso
+          <VCardTitle class="py-4 bg-primary text-white d-flex align-center flex-wrap text-subtitle-1 text-sm-h6">
+            <VIcon icon="ri-truck-line" class="me-2" />
+            <span>Insertar Compra / Nota de Ingreso</span>
           </VCardTitle>
 
-          <VCardText class="pt-6">
+          <VCardText class="pt-4 pt-sm-6 px-3 px-sm-6">
             <VForm @submit.prevent="submitPurchase">
               <!-- HEADER -->
               <VRow class="mb-4">
@@ -369,65 +389,107 @@ definePage({ meta: { permission: 'listar_compra' } })
                   </VAutocomplete>
                 </VCol>
 
-                <VCol cols="12" md="6" class="text-right">
-                  <div class="d-flex justify-end gap-2 mb-1">
-                    <VBtn
-                      color="secondary"
-                      variant="outlined"
-                      prepend-icon="ri-download-line"
-                      @click="downloadCsvTemplate"
-                    >
-                      Plantilla Ejemplo
-                    </VBtn>
-                    <VBtn
-                      color="info"
-                      variant="tonal"
-                      prepend-icon="ri-file-excel-line"
-                      @click="triggerCsvFile"
-                    >
-                      Importar desde CSV
-                    </VBtn>
-                  </div>
-                  <input
-                    ref="csvInput"
-                    type="file"
-                    accept=".csv"
-                    class="d-none"
-                    @change="handleCsvUpload"
-                  />
+                <VCol cols="12" md="6" class="d-flex justify-end">
+                  <VBtn
+                    color="primary"
+                    prepend-icon="ri-qr-code-line"
+                    class="mobile-full-btn"
+                    @click="startScanner"
+                  >
+                    Escanear con Celular (Cámara)
+                  </VBtn>
                 </VCol>
               </VRow>
 
-              <!-- Éxito de Importación -->
-              <VAlert
-                v-if="showImportSuccess && importSuccessMessage"
-                v-model="showImportSuccess"
-                title="Importación Exitosa"
-                type="success"
-                variant="tonal"
-                closable
-                class="mb-4 text-left"
-              >
-                {{ importSuccessMessage }}
-              </VAlert>
+              <!-- Vista en Tarjetas para Celulares (oculto en pantallas sm y superiores) -->
+              <div class="d-block d-sm-none">
+                <div v-if="formData.items.length === 0" class="text-center text-medium-emphasis py-6 border rounded bg-grey-lighten-4">
+                  Utilice el buscador para agregar productos.
+                </div>
+                <div v-else v-for="(item, index) in formData.items" :key="'card-' + index" class="border rounded mb-4 overflow-hidden bg-white elevation-1">
+                  <!-- Cabecera de la Tarjeta -->
+                  <div class="bg-grey-lighten-4 px-3 py-2 d-flex justify-space-between align-center border-b">
+                    <span class="font-weight-bold text-caption text-primary">#{{ index + 1 }} - Producto</span>
+                    <IconBtn size="small" color="error" @click="removeItem(index)">
+                      <VIcon icon="ri-delete-bin-line" />
+                    </IconBtn>
+                  </div>
+                  
+                  <!-- Contenido de la Tarjeta -->
+                  <div class="px-3 py-3">
+                    <div class="font-weight-bold text-subtitle-2 mb-3">{{ item.name }}</div>
+                    
+                    <VRow density="compact" class="mb-1">
+                      <VCol cols="6">
+                        <VTextField 
+                          v-model="item.batch" 
+                          label="Lote" 
+                          density="compact" 
+                          variant="outlined" 
+                          placeholder="Opcional"
+                          hide-details
+                        />
+                      </VCol>
+                      <VCol cols="6">
+                        <VTextField 
+                          v-model="item.expiration_date" 
+                          label="Vencimiento*" 
+                          type="date" 
+                          density="compact" 
+                          variant="outlined" 
+                          required
+                          hide-details
+                        />
+                      </VCol>
+                    </VRow>
+                    
+                    <VRow density="compact" class="mb-1">
+                      <VCol cols="12" xs="12" sm="4">
+                        <VTextField 
+                          v-model.number="item.quantity" 
+                          label="Cantidad*" 
+                          type="number" 
+                          density="compact" 
+                          variant="outlined"
+                          hide-details
+                        />
+                      </VCol>
+                      <VCol cols="6" sm="4">
+                        <VTextField 
+                          v-model.number="item.unit_cost" 
+                          label="Costo Bs*" 
+                          type="number" 
+                          step="0.01" 
+                          density="compact" 
+                          variant="outlined"
+                          hide-details
+                          @input="item.sale_price = Number((item.unit_cost * 1.35).toFixed(2))"
+                        />
+                      </VCol>
+                      <VCol cols="6" sm="4">
+                        <VTextField 
+                          v-model.number="item.sale_price" 
+                          label="Venta Bs" 
+                          type="number" 
+                          step="0.01" 
+                          density="compact" 
+                          variant="outlined"
+                          hide-details
+                        />
+                      </VCol>
+                    </VRow>
+                  </div>
+                  
+                  <!-- Subtotal de la Tarjeta -->
+                  <div class="bg-green-lighten-5 px-3 py-2 d-flex justify-space-between align-center border-t">
+                    <span class="text-caption font-weight-bold">Subtotal:</span>
+                    <span class="font-weight-black text-green-darken-3">Bs. {{ (item.quantity * item.unit_cost).toFixed(2) }}</span>
+                  </div>
+                </div>
+              </div>
 
-              <!-- Advertencias de Importación -->
-              <VAlert
-                v-if="showImportWarnings && importWarnings.length > 0"
-                v-model="showImportWarnings"
-                title="Errores / Advertencias de Importación CSV"
-                type="error"
-                variant="tonal"
-                closable
-                class="mb-4 text-left"
-              >
-                <ul class="pl-4 mt-2">
-                  <li v-for="(warn, wIdx) in importWarnings" :key="wIdx" class="text-caption">{{ warn }}</li>
-                </ul>
-              </VAlert>
-
-              <!-- DATA TABLE Lotes -->
-              <VTable density="compact" class="border rounded align-middle">
+              <!-- Vista en Tabla para Computadoras/Tablets (oculto en celulares) -->
+              <VTable density="compact" class="border rounded align-middle d-none d-sm-table">
                 <thead>
                   <tr class="bg-grey-lighten-4">
                     <th class="text-center font-weight-bold" width="5%">#</th>
@@ -462,20 +524,94 @@ definePage({ meta: { permission: 'listar_compra' } })
               </VTable>
 
               <VRow class="mt-4 pb-2 border-b">
-                <VCol cols="12" class="text-end">
-                    <div class="text-h6">Costo Total Compra: <span class="font-weight-black text-primary">Bs. {{ totalPurchase.toFixed(2) }}</span></div>
+                <VCol cols="12" class="text-start text-sm-end">
+                    <div class="text-subtitle-1 text-sm-h6">Costo Total Compra: <span class="font-weight-black text-primary">Bs. {{ totalPurchase.toFixed(2) }}</span></div>
                    <div class="text-caption text-medium-emphasis">El Costo Promedio (CPP) del inventario se auto-recalculará al procesar.</div>
                 </VCol>
               </VRow>
 
-              <div class="d-flex justify-end gap-3 mt-6">
-                <VBtn color="secondary" variant="outlined" @click="router.push('/compras')">Descartar</VBtn>
-                <VBtn color="success" type="submit" :loading="isLoading" size="large"><VIcon start icon="ri-check-line" /> Procesar Compra y Sincronizar Stock</VBtn>
+              <div class="d-flex flex-column flex-sm-row justify-end gap-3 mt-6">
+                <VBtn color="secondary" variant="outlined" class="mobile-full-btn" @click="router.push('/compras')">Descartar</VBtn>
+                <VBtn color="success" type="submit" :loading="isLoading" size="large" class="mobile-full-btn"><VIcon start icon="ri-check-line" /> Procesar Compra y Sincronizar Stock</VBtn>
               </div>
             </VForm>
           </VCardText>
         </VCard>
       </VCol>
     </VRow>
+
+    <!-- DIALOG DE ESCANEO POR CÁMARA Y ASOCIACIÓN -->
+    <VDialog v-model="isScannerModalOpen" max-width="600" persistent>
+      <VCard>
+        <VCardTitle class="bg-primary text-white d-flex justify-space-between align-center py-3">
+          <span class="d-flex align-center"><VIcon icon="ri-qr-code-line" class="me-2" /> Escanear Código de Barras</span>
+          <VBtn icon="ri-close-line" variant="text" color="white" @click="stopScanner" />
+        </VCardTitle>
+        <VCardText class="px-3 px-sm-6 pt-4 text-center">
+          <!-- Estado 1: Escaneando -->
+          <div v-show="!isAssociating">
+            <p class="text-subtitle-2 mb-3">Enfoque el código de barras del producto con la cámara de su celular</p>
+            <div id="reader" style="width: 100%; max-width: 500px; margin: 0 auto; background: #fafafa; border-radius: 8px; overflow: hidden; min-height: 250px;"></div>
+            <div class="d-flex justify-center gap-2 mt-4">
+              <VBtn color="warning" variant="tonal" v-if="isScanning" prepend-icon="ri-pause-line" @click="pauseScanner">Pausar Cámara</VBtn>
+              <VBtn color="success" variant="tonal" v-else prepend-icon="ri-play-line" @click="resumeScanner">Reanudar Cámara</VBtn>
+            </div>
+          </div>
+
+          <!-- Estado 2: Asociando código desconocido -->
+          <div v-if="isAssociating" class="text-left">
+            <VAlert type="warning" variant="tonal" class="mb-4 text-caption">
+              El código escaneado <strong>"{{ scannedBarcode }}"</strong> no está registrado.
+              Asócielo a un producto del catálogo para continuar.
+            </VAlert>
+
+            <VAutocomplete
+              v-model="selectedProductForAssociation"
+              v-model:search="associateSearchQuery"
+              :loading="associateSearchLoading"
+              :items="associateProducts"
+              item-title="name"
+              item-value="id"
+              return-object
+              placeholder="Buscar por nombre..."
+              prepend-inner-icon="ri-search-line"
+              variant="outlined"
+              class="mb-4"
+              hide-no-data
+            >
+              <template #selection="{ item }">
+                <span class="text-body-2 text-truncate font-weight-medium">
+                  {{ item.raw.name }} {{ item.raw.laboratory ? `(${item.raw.laboratory.name})` : '' }}
+                </span>
+              </template>
+              <template #item="{ props, item }">
+                <VListItem 
+                  v-bind="props" 
+                  :title="item.raw.name" 
+                  :subtitle="`${item.raw.laboratory ? 'Lab: ' + item.raw.laboratory.name : 'Sin Laboratorio'} | Código: ${item.raw.barcode || 'Ninguno'}`"
+                />
+              </template>
+            </VAutocomplete>
+
+            <div class="d-flex justify-end gap-2 mt-6">
+              <VBtn color="secondary" variant="outlined" @click="resumeScanner">Cancelar y Reanudar</VBtn>
+              <VBtn color="primary" :disabled="!selectedProductForAssociation" :loading="isLoading" @click="associateBarcodeToProduct">Vincular y Agregar</VBtn>
+            </div>
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
   </div>
 </template>
+
+<style scoped>
+.mobile-full-btn {
+  inline-size: 100%;
+}
+
+@media (min-width: 600px) {
+  .mobile-full-btn {
+    inline-size: auto;
+  }
+}
+</style>

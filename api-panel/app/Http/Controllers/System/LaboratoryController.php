@@ -5,6 +5,7 @@ namespace App\Http\Controllers\System;
 use App\Http\Controllers\Controller;
 use App\Models\Laboratory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class LaboratoryController extends Controller
 {
@@ -21,10 +22,20 @@ class LaboratoryController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'status' => 'boolean'
+            'status' => 'nullable|boolean',
+            'image' => 'nullable|image|max:2048'
         ]);
 
-        $item = Laboratory::create($validated);
+        $data = [
+            'name' => $validated['name'],
+            'status' => $request->has('status') ? $request->boolean('status') : true
+        ];
+
+        if ($request->hasFile('image')) {
+            $data['image_path'] = $request->file('image')->store('laboratories', 'public');
+        }
+
+        $item = Laboratory::create($data);
         return response()->json($item, 201);
     }
 
@@ -37,10 +48,23 @@ class LaboratoryController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'status' => 'boolean'
+            'status' => 'nullable|boolean',
+            'image' => 'nullable|image|max:2048'
         ]);
 
-        $laboratory->update($validated);
+        $data = ['name' => $validated['name']];
+        if ($request->has('status')) {
+            $data['status'] = $request->boolean('status');
+        }
+
+        if ($request->hasFile('image')) {
+            if ($laboratory->image_path && Storage::disk('public')->exists($laboratory->image_path)) {
+                Storage::disk('public')->delete($laboratory->image_path);
+            }
+            $data['image_path'] = $request->file('image')->store('laboratories', 'public');
+        }
+
+        $laboratory->update($data);
         return response()->json($laboratory);
     }
 

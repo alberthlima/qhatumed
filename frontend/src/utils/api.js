@@ -39,7 +39,7 @@ export const $api = ofetch.create({
   },
   async onRequest(response) {
     const accessToken = localStorage.getItem("token"); //useCookie('accessToken').value
-    if (isTokenExpired(accessToken) && response.request != 'auth/login') {
+    if (accessToken && accessToken !== 'undefined' && accessToken !== 'null' && isTokenExpired(accessToken) && response.request != 'auth/login') {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
 

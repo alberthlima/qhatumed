@@ -11,7 +11,7 @@ const toast = useMaterializeToast()
 const destroy = async() => {
   try {
     isLoading.value = true
-    const response = await $api(`/products/${props.productoSelected.id}`, {
+    const response = await $api(`/v1/products/${props.productoSelected.id}`, {
       method: "DELETE",
       onResponse({ response }){
         if(response.status === 200 || response.status === 204){

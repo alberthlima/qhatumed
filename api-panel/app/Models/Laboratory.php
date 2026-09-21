@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Laboratory extends Model
 {
-    protected $fillable = ['name', 'status'];
+    protected $fillable = ['name', 'status', 'image_path'];
 
     public function products()
     {

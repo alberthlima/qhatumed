@@ -47,18 +47,6 @@ const saveConfig = async () => {
     }
 }
 
-const syncCatalogos = async () => {
-    isSyncing.value = true
-    try {
-        const res = await $api('/v1/siat/sync', { method: 'POST' })
-        toast.showSuccess(res.message || 'Catálogos sincronizados', 'Sincronización Exitosa')
-    } catch (e) {
-        toast.showError('Error en la sincronización: Revisa que tu Token y Código Sistema sean válidos.', 'Error de Sincronización')
-    } finally {
-        isSyncing.value = false
-    }
-}
-
 onMounted(() => {
     loadSettings()
 })
@@ -132,10 +120,6 @@ onMounted(() => {
                <div class="d-flex flex-wrap gap-4 mt-6">
                 <VBtn type="submit" color="success" :loading="isLoading" size="large" elevation="2" class="font-weight-bold">
                   <VIcon start icon="ri-save-line" /> Guardar Configuración
-                </VBtn>
-
-                <VBtn color="primary" variant="tonal" size="large" @click="syncCatalogos" :loading="isSyncing">
-                  <VIcon start icon="ri-refresh-line" /> Sincronizar Catálogos SIAT
                 </VBtn>
                </div>
             </VForm>

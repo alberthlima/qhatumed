@@ -36,7 +36,7 @@ const update = async() => {
 
   try {
     isLoading.value = true
-    const response = await $api(`/suppliers/${props.proveedorSelected.id}`, {
+    const response = await $api(`/v1/suppliers/${props.proveedorSelected.id}`, {
       method: "PUT",
       body: formData,
       onResponse({ response }){

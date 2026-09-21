@@ -156,28 +156,16 @@ export default [
     icon: { icon: "ri-government-line" },
     children: [
       {
-        title: "Configuración",
+        title: "Configuración Servicio",
         to: { name: "siat-config" },
         permission: "all",
         icon: { icon: "ri-settings-5-line" },
-      },
-      {
-        title: "Sincronización de Catálogos",
-        to: { path: "/siat/sincronizacion" },
-        permission: "all",
-        icon: { icon: "ri-refresh-line" },
       },
       {
         title: "Lista de Facturas",
         to: { name: "ventas", query: { type: "invoices" } },
         permission: "listar_venta",
         icon: { icon: "ri-file-list-line" },
-      },
-      {
-        title: "Contingencias",
-        to: { path: "/siat/contingencias" },
-        permission: "all",
-        icon: { icon: "ri-wifi-off-line" },
       },
     ],
   },

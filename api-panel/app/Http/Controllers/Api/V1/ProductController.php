@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Resources\ProductResource;
 use Illuminate\Http\Request;
@@ -13,13 +14,18 @@ class ProductController extends Controller
     public function index(Request $request)
     {
         $query = Product::query()
-            ->with(['supplier', 'laboratory', 'pharmaceuticalForm', 'activeBatches']);
+            ->with(['supplier', 'laboratory', 'pharmaceuticalForm', 'activeBatches', 'barcodes']);
 
-        // Optional search by name or barcode
+        // Optional search by name or barcode (primary and alternates)
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where('name', 'LIKE', "%{$search}%")
-                  ->orWhere('barcode', 'LIKE', "%{$search}%");
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'LIKE', "%{$search}%")
+                  ->orWhere('barcode', 'LIKE', "%{$search}%")
+                  ->orWhereHas('barcodes', function ($bq) use ($search) {
+                      $bq->where('barcode', 'LIKE', "%{$search}%");
+                  });
+            });
         }
 
         // Apply sorting
@@ -48,8 +54,7 @@ class ProductController extends Controller
 
     public function show(Product $product)
     {
-        // For show, we might want to include the active batches
-        $product->loadMissing(['supplier', 'laboratory', 'pharmaceuticalForm', 'activeBatches']);
+        $product->loadMissing(['supplier', 'laboratory', 'pharmaceuticalForm', 'activeBatches', 'barcodes']);
         
         return new ProductResource($product);
     }
@@ -59,6 +64,77 @@ class ProductController extends Controller
         $product->update($request->validated());
         
         return new ProductResource($product);
+    }
+
+    /**
+     * Asocia un nuevo código de barras al producto.
+     * - Si el producto NO tiene código principal, lo asigna ahí.
+     * - Siempre guarda el código en product_barcodes para trazabilidad completa.
+     */
+    public function associateBarcode(Request $request, Product $product)
+    {
+        $request->validate([
+            'barcode' => 'required|string|max:100',
+            'note'    => 'nullable|string|max:150',
+        ]);
+
+        $barcode = trim($request->barcode);
+
+        // Verificar que el código no esté en uso por otro producto (tabla principal)
+        $existsInMain = Product::where('barcode', $barcode)
+            ->where('id', '!=', $product->id)
+            ->exists();
+
+        if ($existsInMain) {
+            return response()->json([
+                'message' => 'Este código de barras ya está asignado a otro producto.'
+            ], 422);
+        }
+
+        // Verificar que el código no esté en la tabla de alternos de otro producto
+        $existsInAlternate = ProductBarcode::where('barcode', $barcode)
+            ->where('product_id', '!=', $product->id)
+            ->exists();
+
+        if ($existsInAlternate) {
+            return response()->json([
+                'message' => 'Este código de barras ya está registrado como alterno de otro producto.'
+            ], 422);
+        }
+
+        // Si el producto aún no tiene código principal, asignárselo
+        if (empty($product->barcode)) {
+            $product->update(['barcode' => $barcode]);
+        }
+
+        // Guardar en la tabla de códigos alternos (evitar duplicado para este mismo producto)
+        ProductBarcode::firstOrCreate(
+            ['product_id' => $product->id, 'barcode' => $barcode],
+            ['note' => $request->note]
+        );
+
+        $product->loadMissing(['supplier', 'laboratory', 'pharmaceuticalForm', 'barcodes']);
+
+        return new ProductResource($product);
+    }
+
+    /**
+     * Lista todos los códigos de barras registrados de un producto.
+     * Útil para trazabilidad y consultas SQL desde reportes.
+     */
+    public function barcodes(Product $product)
+    {
+        return response()->json([
+            'product_id'   => $product->id,
+            'product_name' => $product->name,
+            'primary_barcode' => $product->barcode,
+            'alternate_barcodes' => $product->barcodes->map(fn ($b) => [
+                'id'         => $b->id,
+                'barcode'    => $b->barcode,
+                'note'       => $b->note,
+                'registered' => $b->created_at->format('d/m/Y'),
+            ]),
+        ]);
     }
 
     public function destroy(Product $product)

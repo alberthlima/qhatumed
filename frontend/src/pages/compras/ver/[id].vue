@@ -62,21 +62,21 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="pa-4">
+  <div class="pa-2 pa-sm-4">
     <VRow v-if="isLoading">
         <VCol cols="12" class="text-center py-10"><VProgressCircular indeterminate color="primary" /></VCol>
     </VRow>
     <VRow v-else-if="purchase">
-      <VCol cols="12" md="10" class="mx-auto">
+      <VCol cols="12" md="10" class="mx-auto px-2 px-sm-3">
         <VCard>
-          <VCardTitle class="py-4 d-flex justify-space-between align-center" :class="purchase.status === 'COMPLETED' ? 'bg-primary' : 'bg-error'">
-            <div class="text-white">
+          <VCardTitle class="py-4 d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center gap-2" :class="purchase.status === 'COMPLETED' ? 'bg-primary' : 'bg-error'">
+            <div class="text-white text-subtitle-1 text-sm-h6">
                 <VIcon icon="ri-file-text-line" class="me-2" />
                 VISOR DE COMPRA (I-{{ purchase.id }})
             </div>
             <VChip size="small" variant="elevated" :color="purchase.status === 'COMPLETED' ? 'success' : 'white'">ESTADO: {{ purchase.status }}</VChip>
           </VCardTitle>
-          <VCardText class="pt-6">
+          <VCardText class="pt-4 pt-sm-6 px-3 px-sm-6">
             <VRow>
               <VCol cols="12" md="4"><strong>Proveedor:</strong> {{ purchase.supplier?.name }}</VCol>
               <VCol cols="12" md="4"><strong>Fecha Ingreso:</strong> {{ purchase.purchase_date }}</VCol>
@@ -86,7 +86,43 @@ onMounted(() => {
             <VDivider class="my-6" />
             <h6 class="text-h6 mb-4 text-primary">Detalle Físico de Lotes (FEFO)</h6>
             
-            <VTable density="compact" class="border rounded">
+            <div class="d-block d-sm-none">
+              <div v-for="(item, idx) in purchase.items" :key="'mobile-' + item.id" class="border rounded mb-4 overflow-hidden bg-white elevation-1">
+                <div class="bg-grey-lighten-4 px-3 py-2 d-flex justify-space-between align-center border-b">
+                  <span class="font-weight-bold text-caption text-primary">#{{ idx + 1 }} - Producto</span>
+                  <VChip size="small" :color="item.current_stock < item.quantity ? 'warning' : 'success'">
+                    {{ item.current_stock }} unds
+                  </VChip>
+                </div>
+                <div class="px-3 py-3">
+                  <div class="font-weight-bold text-subtitle-2 mb-3">{{ item.product?.name }}</div>
+                  <VRow density="compact">
+                    <VCol cols="6">
+                      <div class="text-caption text-medium-emphasis">Lote</div>
+                      <div class="font-weight-medium">{{ item.batch || 'N/A' }}</div>
+                    </VCol>
+                    <VCol cols="6">
+                      <div class="text-caption text-medium-emphasis">Vencimiento</div>
+                      <div :class="(new Date(item.expiration_date) < new Date()) ? 'text-error font-weight-bold' : 'font-weight-medium'">{{ item.expiration_date }}</div>
+                    </VCol>
+                    <VCol cols="6">
+                      <div class="text-caption text-medium-emphasis">Cant. Original</div>
+                      <div class="font-weight-black">{{ item.quantity }}</div>
+                    </VCol>
+                    <VCol cols="6">
+                      <div class="text-caption text-medium-emphasis">Costo C/U</div>
+                      <div class="font-weight-medium">Bs. {{ Number(item.unit_cost).toFixed(2) }}</div>
+                    </VCol>
+                  </VRow>
+                </div>
+                <div class="bg-green-lighten-5 px-3 py-2 d-flex justify-space-between align-center border-t">
+                  <span class="text-caption font-weight-bold">Subtotal:</span>
+                  <span class="font-weight-black text-green-darken-3">Bs. {{ (item.quantity * item.unit_cost).toFixed(2) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <VTable density="compact" class="border rounded d-none d-sm-table">
               <thead class="bg-grey-lighten-3">
                 <tr>
                   <th class="font-weight-bold text-center" width="5%">#</th>
@@ -117,20 +153,20 @@ onMounted(() => {
               </tbody>
             </VTable>
             
-            <div class="text-end mt-4 text-h5 text-primary pb-6 border-b">
+            <div class="text-start text-sm-end mt-4 text-h6 text-sm-h5 text-primary pb-6 border-b">
                 Total Ingresado: <strong>Bs. {{ Number(purchase.total_amount).toFixed(2) }}</strong>
             </div>
 
-            <div class="d-flex justify-space-between align-center mt-6">
-                <div>
-                  <VBtn color="secondary" variant="tonal" class="me-2" @click="router.push('/compras')">
+            <div class="d-flex flex-column flex-sm-row justify-space-between align-stretch align-sm-center gap-3 mt-6">
+                <div class="d-flex flex-column flex-sm-row gap-2">
+                  <VBtn color="secondary" variant="tonal" class="mobile-full-btn" @click="router.push('/compras')">
                     <VIcon start icon="ri-arrow-left-line" /> Atrás
                   </VBtn>
-                  <VBtn color="info" variant="outlined" @click="downloadPdf">
+                  <VBtn color="info" variant="outlined" class="mobile-full-btn" @click="downloadPdf">
                     <VIcon start icon="ri-printer-line" /> Imprimir Comprobante
                   </VBtn>
                 </div>
-                <VBtn color="error" variant="flat" v-if="purchase.status === 'COMPLETED'" @click="isAnnulDialogVisible = true">
+                <VBtn color="error" variant="flat" class="mobile-full-btn" v-if="purchase.status === 'COMPLETED'" @click="isAnnulDialogVisible = true">
                     <VIcon start icon="ri-close-circle-fill"/> Anular Ingreso Contable
                 </VBtn>
             </div>
@@ -160,3 +196,15 @@ onMounted(() => {
     </VRow>
   </div>
 </template>
+
+<style scoped>
+.mobile-full-btn {
+  inline-size: 100%;
+}
+
+@media (min-width: 600px) {
+  .mobile-full-btn {
+    inline-size: auto;
+  }
+}
+</style>

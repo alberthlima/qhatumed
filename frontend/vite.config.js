@@ -94,6 +94,14 @@ export default defineConfig({
       '@api-utils': fileURLToPath(new URL('./src/plugins/fake-api/utils/', import.meta.url)),
     },
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      }
+    }
+  },
   build: {
     chunkSizeWarningLimit: 5000,
   },

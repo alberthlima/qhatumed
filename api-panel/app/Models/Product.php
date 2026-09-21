@@ -37,6 +37,12 @@ class Product extends Model
 
 
 
+    // Un producto puede tener varios códigos de barras (mismo producto, diferente empaque/proveedor)
+    public function barcodes()
+    {
+        return $this->hasMany(ProductBarcode::class)->latest();
+    }
+
     // Un producto tiene muchos lotes (histórico de compras)
     public function purchaseItems()
     {

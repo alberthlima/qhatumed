@@ -26,65 +26,23 @@ Route::group([
     Route::post("user/{id}", [userController::class, 'update']);
     Route::resource("user", userController::class);
 
+    // Alias routes for backward compatibility
+    Route::apiResource('laboratories', App\Http\Controllers\System\LaboratoryController::class);
+    Route::apiResource('suppliers', App\Http\Controllers\System\SupplierController::class);
+    Route::apiResource('customers', App\Http\Controllers\System\CustomerController::class);
+    Route::apiResource('pharmaceutical-forms', App\Http\Controllers\System\PharmaceuticalFormController::class);
+    Route::apiResource('dispensers', App\Http\Controllers\DispenserController::class);
+    Route::apiResource('products', \App\Http\Controllers\Api\V1\ProductController::class);
+
     // --- API V1 (Mejores Prácticas) ---
     Route::prefix('v1')->group(function () {
         // Configuraciones de Empresa y SIAT
         Route::get('settings', [\App\Http\Controllers\CompanySettingController::class, 'show']);
         Route::post('settings', [\App\Http\Controllers\CompanySettingController::class, 'update']);
-        Route::post('siat/sync', function() {
-            try {
-                $syncService = app(\Misalud\Siat\Services\SincronizacionService::class);
-                $resultados = $syncService->sincronizarTodo();
-                
-                $fallidos = 0;
-                foreach ($resultados as $catalogo => $res) {
-                    if (!$res['ok']) {
-                        $fallidos++;
-                    }
-                }
-                
-                if ($fallidos > 0) {
-                    return response()->json([
-                        'message' => 'Sincronización parcial con errores.',
-                        'resultados' => $resultados
-                    ], 500);
-                }
-
-                return response()->json([
-                    'message' => 'Sincronización de catálogos finalizada correctamente.',
-                    'resultados' => $resultados
-                ]);
-            } catch (\Exception $e) {
-                return response()->json([
-                    'message' => 'Error en la sincronización: ' . $e->getMessage()
-                ], 500);
-            }
-        });
-        Route::get('siat/catalogs', function() {
-            $syncService = app(\Misalud\Siat\Services\SincronizacionService::class);
-            try {
-                $unidades = $syncService->obtener('unidades_medida');
-            } catch (\Exception $e) {
-                $unidades = [];
-            }
-            try {
-                $productos = $syncService->obtener('productos_servicios');
-            } catch (\Exception $e) {
-                $productos = [];
-            }
-            return response()->json([
-                'unidades_medida' => $unidades,
-                'productos_servicios' => $productos,
-            ]);
-        });
-
-        // Rutas Premium de Catálogos y Contingencias SIAT
-        Route::get('siat/sync-status', [\App\Http\Controllers\Api\V1\SiatCatalogosController::class, 'status']);
-        Route::get('siat/catalog/{name}', [\App\Http\Controllers\Api\V1\SiatCatalogosController::class, 'show']);
-        Route::apiResource('siat/contingencias', \App\Http\Controllers\Api\V1\SiatContingenciaController::class)->only(['index', 'store']);
-        Route::post('siat/contingencias/{id}/transmitir', [\App\Http\Controllers\Api\V1\SiatContingenciaController::class, 'transmitir']);
 
         // Core Entities
+        Route::post('products/{product}/associate-barcode', [\App\Http\Controllers\Api\V1\ProductController::class, 'associateBarcode']);
+        Route::get('products/{product}/barcodes', [\App\Http\Controllers\Api\V1\ProductController::class, 'barcodes']);
         Route::apiResource('products', \App\Http\Controllers\Api\V1\ProductController::class);
         
         // Transacciones (Ventas y Compras)
@@ -126,5 +84,16 @@ Route::group([
         Route::post('cash-movements', [App\Http\Controllers\Api\V1\CashMovementController::class, 'store']);
         Route::get('cash-movements/session/{sessionId}', [App\Http\Controllers\Api\V1\CashMovementController::class, 'index']);
         Route::get('cash-movements/historial', [App\Http\Controllers\Api\V1\CashMovementController::class, 'historial']);
+
+        // Dashboard Statistics
+        Route::get('dashboard/statistics', [\App\Http\Controllers\Api\V1\DashboardController::class, 'statistics']);
+
+        // Financial & Operation Reports
+        Route::get('reports/sales', [\App\Http\Controllers\Api\V1\ReportController::class, 'sales']);
+        Route::get('reports/sales/pdf', [\App\Http\Controllers\Api\V1\ReportController::class, 'downloadSalesPdf']);
+        Route::get('reports/sales/excel', [\App\Http\Controllers\Api\V1\ReportController::class, 'downloadSalesExcel']);
+        Route::get('reports/purchases', [\App\Http\Controllers\Api\V1\ReportController::class, 'purchases']);
+        Route::get('reports/purchases/pdf', [\App\Http\Controllers\Api\V1\ReportController::class, 'downloadPurchasesPdf']);
+        Route::get('reports/purchases/excel', [\App\Http\Controllers\Api\V1\ReportController::class, 'downloadPurchasesExcel']);
     });
 });

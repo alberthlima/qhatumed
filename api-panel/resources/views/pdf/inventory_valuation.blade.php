@@ -53,14 +53,15 @@
         <thead>
             <tr>
                 <th width="3%" class="text-center">#</th>
-                <th width="12%">Código</th>
+                <th width="10%">Código</th>
                 <th>Producto / Medicamento</th>
-                <th width="15%">Laboratorio</th>
-                <th width="8%" class="text-right">Stock</th>
+                <th width="12%">Laboratorio</th>
+                <th width="7%" class="text-right">Stock</th>
                 <th width="10%" class="text-right">Costo Prom.</th>
                 <th width="10%" class="text-right">P. Venta</th>
-                <th width="12%" class="text-right">Val. Costo</th>
-                <th width="12%" class="text-right">Val. Venta</th>
+                <th width="11%" class="text-right">Val. PEPS</th>
+                <th width="11%" class="text-right">Val. CPP</th>
+                <th width="11%" class="text-right">Val. Venta</th>
             </tr>
         </thead>
         <tbody>
@@ -74,6 +75,7 @@
                 <td class="text-right">Bs. {{ number_format($prod['average_cost'], 2) }}</td>
                 <td class="text-right">Bs. {{ number_format($prod['sale_price'], 2) }}</td>
                 <td class="text-right font-weight-bold">Bs. {{ number_format($prod['cost_valuation'], 2) }}</td>
+                <td class="text-right">Bs. {{ number_format($prod['cpp_valuation'], 2) }}</td>
                 <td class="text-right">Bs. {{ number_format($prod['sale_valuation'], 2) }}</td>
             </tr>
             @endforeach
@@ -83,15 +85,21 @@
     <div class="totals-box">
         <table class="totals-table">
             <tr>
-                <td width="30%" class="text-primary">VALOR TOTAL COSTO (INVENTARIO):</td>
+                <td width="30%" class="text-primary">VALOR TOTAL COSTO (PEPS):</td>
                 <td width="20%">Bs. {{ number_format($totalCost, 2) }}</td>
                 <td width="30%" class="text-success">INGRESOS POTENCIALES (VENTA):</td>
                 <td width="20%" class="text-success">Bs. {{ number_format($totalSale, 2) }}</td>
             </tr>
             <tr>
-                <td class="text-primary">MARGEN DE UTILIDAD ESTIMADO:</td>
+                <td class="text-primary">VALOR TOTAL COSTO (CPP):</td>
+                <td>Bs. {{ number_format($totalCostCpp, 2) }}</td>
+                <td class="text-primary">MARGEN UTILIDAD (PEPS):</td>
                 <td class="text-success">Bs. {{ number_format($totalSale - $totalCost, 2) }}</td>
-                <td class="text-primary">RENTABILIDAD PROYECTADA:</td>
+            </tr>
+            <tr>
+                <td class="text-primary">MARGEN UTILIDAD (CPP):</td>
+                <td class="text-success">Bs. {{ number_format($totalSale - $totalCostCpp, 2) }}</td>
+                <td class="text-primary">RENTABILIDAD (PEPS):</td>
                 <td class="text-success">{{ $totalCost > 0 ? number_format((($totalSale - $totalCost) / $totalCost) * 100, 2) : '0.00' }}%</td>
             </tr>
         </table>

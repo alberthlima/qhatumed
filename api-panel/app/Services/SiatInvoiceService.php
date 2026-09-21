@@ -2,184 +2,170 @@
 
 namespace App\Services;
 
+use App\Models\CompanySetting;
 use App\Models\Sale;
-use Misalud\Siat\Services\CompraVentaService;
-use Misalud\Siat\Services\CodigosService;
-use Misalud\Siat\DTOs\FacturaCabeceraDTO;
-use Misalud\Siat\DTOs\FacturaDetalleDTO;
-use Misalud\Siat\Exceptions\SiatException;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
  * SiatInvoiceService
  * 
- * Orquestador para la emisión de facturas electrónicas en el flujo de la aplicación.
- * Conecta los modelos de Eloquent con el SDK de SIAT.
+ * Cliente HTTP REST para el microservicio independiente SIAT (siat-api-service).
+ * Gestiona la emisión y anulación de facturas electrónicas/computarizadas vía API.
  */
 class SiatInvoiceService
 {
-    protected CompraVentaService $siat;
-    protected CodigosService $codigos;
+    protected string $apiUrl;
+    protected string $apiKey;
+    protected int $timeout;
     protected array $config;
 
     public function __construct()
     {
-        $this->config = config('siat');
-        
-        // Sobreescribir con configuración de Empresa
-        try {
-            $setting = \App\Models\CompanySetting::first();
-            if ($setting) {
-                // Impuestos valida la Razón Social, por ende es priority.
-                if ($setting->legal_name) $this->config['razon_social'] = $setting->legal_name; 
-                if ($setting->nit) $this->config['nit'] = $setting->nit;
-                if ($setting->siat_token) $this->config['token'] = $setting->siat_token;
-                if ($setting->siat_system_code) $this->config['codigo_sistema'] = $setting->siat_system_code;
-                if ($setting->siat_environment) $this->config['ambiente'] = $setting->siat_environment;
-                if ($setting->siat_modality) $this->config['modalidad'] = $setting->siat_modality;
-                if ($setting->siat_branch_code !== null) $this->config['sucursal'] = $setting->siat_branch_code;
-                if ($setting->siat_pos_code !== null) $this->config['punto_venta'] = $setting->siat_pos_code;
-            }
-        } catch (\Exception $e) {
-            // Ignorar si la BD no está migrada aún
-        }
+        $this->config = config('siat', []);
+        $this->apiUrl = rtrim($this->config['api_url'] ?? 'http://127.0.0.1:8000/api/v1', '/');
+        $this->apiKey = $this->config['api_key'] ?? '';
+        $this->timeout = (int) ($this->config['timeout'] ?? 30);
 
-        // El SDK requiere CodigosService para manejar CUIS/CUFD
-        $this->codigos = new CodigosService($this->config);
-        $this->siat    = new CompraVentaService($this->config, $this->codigos);
+        try {
+            $setting = CompanySetting::first();
+            if ($setting) {
+                if (!empty($setting->siat_token)) {
+                    // Si se configuró la API Key en el campo siat_token del panel
+                    $this->apiKey = $setting->siat_token;
+                }
+                if (!empty($setting->siat_branch_code)) {
+                    $this->config['sucursal'] = (int) $setting->siat_branch_code;
+                }
+                if (!empty($setting->siat_pos_code)) {
+                    $this->config['punto_venta'] = (int) $setting->siat_pos_code;
+                }
+                if (!empty($setting->legal_name)) {
+                    $this->config['razon_social'] = $setting->legal_name;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Ignorar en caso de que la tabla o migración aún no esté lista
+        }
     }
 
     /**
-     * Procesa y emite una factura ante el SIAT para una venta dada.
-     * 
-     * @param Sale $sale El modelo de venta ya guardado en BD.
-     * @return Sale El modelo actualizado con datos del SIAT.
-     * @throws SiatException
+     * Emite una factura electrónica/computarizada ante el SIAT mediante siat-api-service.
+     *
+     * @param Sale $sale
+     * @return Sale
+     * @throws \Exception
      */
     public function prepareAndEmit(Sale $sale): Sale
     {
-        // 1. Determinar el siguiente número de factura
-        $sale->invoice_number = $this->getNextInvoiceNumber();
+        $sale->loadMissing(['items.product', 'customer']);
 
-        // 2. Determinar la fecha y hora de emisión para el SIAT
-        $fechaEmision = new \DateTime($sale->sale_date);
-        if ($fechaEmision->format('Y-m-d') === date('Y-m-d')) {
-            $fechaEmision = new \DateTime(); // Usar fecha y hora actual
-        } else {
-            if ($sale->created_at) {
-                $createdAt = new \DateTime($sale->created_at);
-                $fechaEmision->setTime(
-                    (int) $createdAt->format('H'),
-                    (int) $createdAt->format('i'),
-                    (int) $createdAt->format('s')
-                );
-            } else {
-                $fechaEmision->setTime(12, 0, 0);
-            }
+        if (!$sale->invoice_number) {
+            $sale->invoice_number = $this->getNextInvoiceNumber();
         }
 
-        // 3. Construir la Cabecera DTO
-        $cabecera = new FacturaCabeceraDTO(
-            numeroFactura: (int) $sale->invoice_number,
-            fechaEmision: $fechaEmision,
-            razonSocialEmisor: $this->config['razon_social'] ?? 'FARMACIA MISALUD',
-            municipio: $this->config['municipio'] ?? 'Santa Cruz',
-            direccion: $this->config['direccion'] ?? 'Av. Principal #123',
-            montoTotal: (float) $sale->total_amount,
-            codigoMetodoPago: (int) ($sale->payment_method_code ?? 1),
-            clienteNombre: $sale->business_name,
-            clienteDocumento: $sale->nit_ci,
-            codigoTipoDocumento: (int) ($sale->document_type_code ?? 1),
-            montoTotalSujetoIva: (float) $sale->total_amount,
-            codigoMoneda: 1,
-            tipoCambio: 1.0,
-            leyenda: 'Ley N° 453: El proveedor de servicios debe prioritariamente informar sobre las características de los productos.'
-        );
-
-        // 3. Construir los Detalles DTOs
-        $detalles = [];
+        $itemsPayload = [];
         foreach ($sale->items as $item) {
             $product = $item->product;
-
-            [$actividadEconomica, $codigoProductoSin] = $this->resolveActivityAndProduct(
-                $this->config['actividad_economica'] ?? '4772100',
-                (int) ($product->siat_product_code ?? 99100)
-            );
-
-            $detalles[] = new FacturaDetalleDTO(
-                descripcion: $product->name,
-                cantidad: (float) $item->quantity,
-                precioUnitario: (float) $item->unit_price,
-                actividadEconomica: $actividadEconomica,
-                codigoProductoSin: $codigoProductoSin,
-                codigoProducto: (string) $product->id,
-                unidadMedida: (int) ($product->siat_unit_measure_code ?? 57),
-                descuento: (float) ($item->discount ?? 0)
-            );
+            $itemsPayload[] = [
+                'codigo_producto'         => (string) ($product->id ?? $item->product_id),
+                'codigo_producto_sin'     => (int) ($product->siat_product_code ?? 99100),
+                'codigo_actividad'        => (string) ($this->config['actividad_economica'] ?? '4772100'),
+                'descripcion'             => (string) ($product->name ?? 'Producto'),
+                'cantidad'                => (float) $item->quantity,
+                'precio_unitario'         => (float) $item->unit_price,
+                'sub_total'               => (float) ($item->subtotal ?? ($item->quantity * $item->unit_price - ($item->discount ?? 0))),
+                'codigo_unidad_medida'    => (int) ($product->siat_unit_measure_code ?? 57),
+                'descuento'               => (float) ($item->discount ?? 0),
+            ];
         }
 
-        try {
-            // 4. EMISIÓN EN EL SIAT
-            $resultado = $this->siat->emitir($cabecera, $detalles);
+        $payload = [
+            'codigo_sucursal'                 => (int) ($this->config['sucursal'] ?? 0),
+            'codigo_punto_venta'              => (int) ($this->config['punto_venta'] ?? 0),
+            'numero_factura'                  => (int) $sale->invoice_number,
+            'codigo_tipo_documento_identidad' => (int) ($sale->document_type_code ?? 1),
+            'numero_documento'                => (string) ($sale->nit_ci ?? '0'),
+            'complemento'                     => $sale->customer?->complement ?: null,
+            'razon_social_cliente'            => (string) ($sale->business_name ?: 'CONTROL TRIBUTARIO'),
+            'codigo_cliente'                  => (string) ($sale->customer_id ?? $sale->nit_ci ?? '0'),
+            'correo_cliente'                  => $sale->customer?->email ?: null,
+            'codigo_metodo_pago'              => (int) ($sale->payment_method_code ?? 1),
+            'numero_tarjeta'                  => null,
+            'monto_total'                     => (float) $sale->total_amount,
+            'descuento_adicional'             => 0,
+            'items'                           => $itemsPayload,
+        ];
 
-            // 5. Actualizar la venta con éxito
+        try {
+            $response = Http::withHeaders([
+                'X-API-KEY' => $this->apiKey,
+                'Accept'    => 'application/json',
+            ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/emitir", $payload);
+
+            if (!$response->successful() || !$response->json('success')) {
+                $error = $response->json('error') ?? $response->body();
+                $this->logError("Error emitiendo factura para Venta #{$sale->id}: {$error}");
+                throw new \Exception("Error SIAT: " . $error);
+            }
+
+            $data = $response->json('data') ?? [];
+
             $sale->update([
-                'cuf'            => $resultado->cuf,
-                'cufd'           => $resultado->cufd,
-                'siat_uid'       => $resultado->codigoRecepcion,
-                'invoice_url'    => $resultado->qrUrl,
-                'status'         => 'COMPLETED'
+                'cuf'         => $data['cuf'] ?? null,
+                'cufd'        => $data['cufd'] ?? null,
+                'siat_uid'    => $data['codigo_recepcion'] ?? null,
+                'invoice_url' => $data['qr'] ?? null,
+                'status'      => 'COMPLETED',
             ]);
 
             return $sale;
 
-        } catch (SiatException $e) {
-            Log::channel('siat')->error("Error emitiendo factura para Venta #{$sale->id}: " . $e->getMessage());
+        } catch (\Throwable $e) {
+            $this->logError("Excepción al conectar con siat-api-service para Venta #{$sale->id}: " . $e->getMessage());
             throw $e;
         }
     }
 
     /**
-     * Resuelve de forma dinámica la actividad económica y código de producto SIN
-     * autorizados para el NIT configurado, previniendo errores de "servicio no disponible".
+     * Anula una factura electrónica ante el SIAT.
+     *
+     * @param Sale $sale
+     * @param int $motivo
+     * @return bool
+     * @throws \Exception
      */
-    public function resolveActivityAndProduct(string $defaultActivity, int $defaultProductSin): array
+    public function annulInvoice(Sale $sale, int $motivo = 1): bool
     {
-        $actividad = $defaultActivity;
-        $productoSin = $defaultProductSin;
-
-        try {
-            $syncService = new \Misalud\Siat\Services\SincronizacionService($this->config);
-            $actividades = $syncService->obtener('actividades_economicas');
-            $activeCodes = array_column($actividades, 'codigoCaeb');
-            
-            // 1. Validar y resolver Actividad Económica
-            if (!in_array($actividad, $activeCodes) && !empty($activeCodes)) {
-                $actividad = (string) $activeCodes[0];
-            }
-
-            // 2. Validar y resolver Producto SIN para la actividad elegida
-            $productos = $syncService->obtener('productos_servicios');
-            $validProductsForActivity = [];
-            foreach ($productos as $p) {
-                if ((string) $p['codigoActividad'] === $actividad) {
-                    $validProductsForActivity[] = (int) $p['codigoProducto'];
-                }
-            }
-
-            if (!in_array($productoSin, $validProductsForActivity) && !empty($validProductsForActivity)) {
-                // Fallback al primer código de producto SIN válido para esta actividad económica
-                $productoSin = $validProductsForActivity[0];
-            }
-        } catch (\Exception $e) {
-            // Usar valores por defecto en caso de error
+        if (empty($sale->cuf)) {
+            throw new \Exception("La venta no cuenta con CUF asignado para ser anulada.");
         }
 
-        return [$actividad, $productoSin];
+        try {
+            $response = Http::withHeaders([
+                'X-API-KEY' => $this->apiKey,
+                'Accept'    => 'application/json',
+            ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/anular", [
+                'cuf'           => $sale->cuf,
+                'codigo_motivo' => $motivo,
+            ]);
+
+            if (!$response->successful() || !$response->json('success')) {
+                $error = $response->json('error') ?? $response->body();
+                $this->logError("Error anulando factura CUF {$sale->cuf}: {$error}");
+                throw new \Exception("Error anulando factura en SIAT: " . $error);
+            }
+
+            return true;
+
+        } catch (\Throwable $e) {
+            $this->logError("Excepción al anular factura CUF {$sale->cuf}: " . $e->getMessage());
+            throw $e;
+        }
     }
 
     /**
-     * Calcula el correlativo siguiente de factura para la sucursal/punto de venta actual.
+     * Calcula el correlativo siguiente de factura para la sucursal actual.
      */
     protected function getNextInvoiceNumber(): int
     {
@@ -191,24 +177,14 @@ class SiatInvoiceService
     }
 
     /**
-     * Anula una factura electrónica ante el SIAT.
-     * 
-     * @param Sale $sale La venta facturada
-     * @param int $motivo Código de motivo de anulación (default 1)
-     * @return bool
-     * @throws SiatException
+     * Registro seguro de logs.
      */
-    public function annulInvoice(Sale $sale, int $motivo = 1): bool
+    protected function logError(string $message): void
     {
-        if (!$sale->is_invoice || empty($sale->cuf)) {
-            throw new SiatException("La venta no es una factura válida para anulación o no tiene CUF asignado.");
-        }
-
         try {
-            return $this->siat->anular($sale->cuf, $motivo);
-        } catch (SiatException $e) {
-            Log::channel('siat')->error("Error anulando factura para Venta Cuf: {$sale->cuf}: " . $e->getMessage());
-            throw $e;
+            Log::channel('siat')->error($message);
+        } catch (\Throwable $e) {
+            Log::error("[SIAT] " . $message);
         }
     }
 }

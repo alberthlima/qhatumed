@@ -40,7 +40,7 @@ const update = async() => {
 
   try {
     isLoading.value = true
-    const response = await $api(`/laboratories/${props.laboratorioSelected.id}`, {
+    const response = await $api(`/v1/laboratories/${props.laboratorioSelected.id}`, {
       method: "POST", // Laravel interpreta POST + _method=PUT
       body: formData,
       onResponse({ response }){
