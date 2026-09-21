@@ -39,6 +39,23 @@ const editItem = (item) => {
   item_edit.value = item
 }
 
+const toast = useMaterializeToast()
+
+const enableItem = async (item) => {
+  try {
+    isLoading.value = true
+    await $api(`/v1/laboratories/${item.id}/enable`, {
+      method: "POST"
+    })
+    toast.showSuccess('Laboratorio habilitado nuevamente', 'Éxito')
+    list()
+  } catch (error) {
+    toast.showError('Error al habilitar laboratorio', 'Error')
+  } finally {
+    isLoading.value = false
+  }
+}
+
 const deleteItem = (item) => {
   isDeleteDialog.value = true
   item_delete.value = item
@@ -118,8 +135,13 @@ definePage({
             </template>
             <template #item.action="{ item }">
               <div class="d-flex gap-1">
-                <IconBtn size="small" color="info" variant="tonal" @click="editItem(item)"><VIcon icon="ri-pencil-line" size="25" /></IconBtn>
-                <IconBtn size="small" color="error" variant="tonal" @click="deleteItem(item)"><VIcon icon="ri-delete-bin-line" size="25" /></IconBtn>
+                <template v-if="item.status === 1 || item.status === true">
+                  <IconBtn size="small" color="info" variant="tonal" title="Editar" @click="editItem(item)"><VIcon icon="ri-pencil-line" size="20" /></IconBtn>
+                  <IconBtn size="small" color="error" variant="tonal" title="Inhabilitar" @click="deleteItem(item)"><VIcon icon="ri-delete-bin-line" size="20" /></IconBtn>
+                </template>
+                <template v-else>
+                  <IconBtn size="small" color="success" variant="tonal" title="Habilitar Laboratorio" @click="enableItem(item)"><VIcon icon="ri-checkbox-circle-line" size="20" /></IconBtn>
+                </template>
               </div>
             </template>
           </VDataTable>

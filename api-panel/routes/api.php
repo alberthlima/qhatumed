@@ -27,7 +27,8 @@ Route::group([
     Route::resource("user", userController::class);
 
     // Alias routes for backward compatibility
-    Route::apiResource('laboratories', App\Http\Controllers\System\LaboratoryController::class);
+    Route::post('laboratories/{laboratory}/enable', [App\Http\Controllers\System\LaboratoryController::class, 'enable']);
+        Route::apiResource('laboratories', App\Http\Controllers\System\LaboratoryController::class);
     Route::apiResource('suppliers', App\Http\Controllers\System\SupplierController::class);
     Route::apiResource('customers', App\Http\Controllers\System\CustomerController::class);
     Route::apiResource('pharmaceutical-forms', App\Http\Controllers\System\PharmaceuticalFormController::class);
@@ -47,6 +48,7 @@ Route::group([
         
         // Transacciones (Ventas y Compras)
         // Usamos post para anular en lugar de delete para mantener trazabilidad histórica
+        Route::post('laboratories/{laboratory}/enable', [App\Http\Controllers\System\LaboratoryController::class, 'enable']);
         Route::apiResource('laboratories', App\Http\Controllers\System\LaboratoryController::class);
         Route::apiResource('suppliers', App\Http\Controllers\System\SupplierController::class);
         Route::apiResource('customers', App\Http\Controllers\System\CustomerController::class);

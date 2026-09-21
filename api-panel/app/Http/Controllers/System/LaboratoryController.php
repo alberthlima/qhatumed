@@ -73,4 +73,10 @@ class LaboratoryController extends Controller
         $laboratory->update(['status' => false]);
         return response()->json(['message' => 'Laboratory disabled']);
     }
+
+    public function enable(Laboratory $laboratory)
+    {
+        $laboratory->update(['status' => true]);
+        return response()->json(['message' => 'Laboratory enabled', 'data' => $laboratory]);
+    }
 }
