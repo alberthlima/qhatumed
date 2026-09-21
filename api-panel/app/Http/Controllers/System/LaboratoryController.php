@@ -27,7 +27,7 @@ class LaboratoryController extends Controller
         ]);
 
         $data = [
-            'name' => $validated['name'],
+            'name' => mb_strtoupper(trim($validated['name']), 'UTF-8'),
             'status' => $request->has('status') ? $request->boolean('status') : true
         ];
 
@@ -52,7 +52,7 @@ class LaboratoryController extends Controller
             'image' => 'nullable|image|max:2048'
         ]);
 
-        $data = ['name' => $validated['name']];
+        $data = ['name' => mb_strtoupper(trim($validated['name']), 'UTF-8')];
         if ($request->has('status')) {
             $data['status'] = $request->boolean('status');
         }

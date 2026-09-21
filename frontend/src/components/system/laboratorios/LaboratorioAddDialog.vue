@@ -77,7 +77,7 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
         <VForm class="mt-4" @submit.prevent="store">
           <VRow>
             <VCol cols="12">
-              <VTextField v-model="name" label="Nombre *" placeholder="Ej: Laboratorios Bagó" :rules="[requiredValidator]" />
+              <VTextField v-model="name" label="Nombre *" @update:model-value="name = $event ? $event.toUpperCase() : ''" style="text-transform: uppercase;" placeholder="Ej: Laboratorios Bagó" :rules="[requiredValidator]" />
             </VCol>
             <VCol cols="12">
               <VTextarea v-model="description" label="Descripción (Opcional)" placeholder="Detalles de contacto..." rows="2" />
