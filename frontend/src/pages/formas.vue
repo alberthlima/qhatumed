@@ -6,7 +6,6 @@ import FormaDeleteDialog from '@/components/system/formas/FormaDeleteDialog.vue'
 const headers = [
   { title: 'ID', key: 'id' },
   { title: 'Forma Farmacéutica', key: 'name' },
-  { title: 'Descripción', key: 'description' },
   { title: 'Estado', key: 'status' },
   { title: 'Acciones', key: 'action', sortable: false },
 ]
@@ -19,17 +18,44 @@ const list_items = ref([])
 const buscar = ref('')
 const item_edit = ref(null)
 const item_delete = ref(null)
+const toast = useMaterializeToast()
 
 const list = async () => {
   try {
     isLoading.value = true
     const response = await $api("/v1/pharmaceutical-forms?search=" + (buscar.value || ''), { method: "GET" })
     list_items.value = response.data || response || []
-  } catch (error) { console.error(error) } finally { isLoading.value = false }
+  } catch (error) { 
+    console.error(error) 
+  } finally { 
+    isLoading.value = false 
+  }
 }
 
-const editItem = (item) => { isEditDialog.value = true; item_edit.value = item }
-const deleteItem = (item) => { isDeleteDialog.value = true; item_delete.value = item }
+const editItem = (item) => { 
+  isEditDialog.value = true
+  item_edit.value = item 
+}
+
+const deleteItem = (item) => { 
+  isDeleteDialog.value = true
+  item_delete.value = item 
+}
+
+const enableItem = async (item) => {
+  try {
+    isLoading.value = true
+    await $api(`/v1/pharmaceutical-forms/${item.id}/enable`, {
+      method: "POST"
+    })
+    toast.showSuccess('Forma farmacéutica habilitada nuevamente', 'Éxito')
+    list()
+  } catch (error) {
+    toast.showError('Error al habilitar forma farmacéutica', 'Error')
+  } finally {
+    isLoading.value = false
+  }
+}
 
 onMounted(() => {
   list()
@@ -47,11 +73,26 @@ definePage({ meta: { permission: 'listar_forma' } });
     <VRow>
       <VCol cols="12">
         <VCard>
-          <VCardTitle><VIcon icon="ri-capsule-line" size="20" class="me-2 text-primary" />Formas Farmacéuticas</VCardTitle>
+          <VCardTitle>
+            <VIcon icon="ri-capsule-line" size="20" class="me-2 text-primary" />
+            Formas Farmacéuticas
+          </VCardTitle>
           <VCardText>
             <VRow class="justify-space-between">
-              <VCol cols="12" md="4"><VTextField placeholder="Buscar..." density="compact" prepend-inner-icon="ri-search-line" v-model="buscar" @keyup.enter="list()" /></VCol>
-              <VCol cols="12" md="4" class="text-end"><VBtn color="success" @click="isAddDialog = true"><VIcon end icon="ri-add-circle-fill" /> Registrar</VBtn></VCol>
+              <VCol cols="12" md="4">
+                <VTextField 
+                  placeholder="Buscar Forma..." 
+                  density="compact" 
+                  prepend-inner-icon="ri-search-line" 
+                  v-model="buscar" 
+                  @keyup.enter="list()" 
+                />
+              </VCol>
+              <VCol cols="12" md="4" class="text-end">
+                <VBtn color="success" @click="isAddDialog = true">
+                  <VIcon end icon="ri-add-circle-fill" /> Registrar Forma
+                </VBtn>
+              </VCol>
             </VRow> 
           </VCardText>
           <VDataTable 
@@ -76,12 +117,19 @@ definePage({ meta: { permission: 'listar_forma' } });
             <template #item.id="{ item }"><span class="text-h6">{{ item.id }}</span></template>
             <template #item.name="{ item }"><span class="font-weight-medium">{{ item.name }}</span></template>
             <template #item.status="{ item }">
-              <VChip :color="item.status === 1 ? 'success' : 'error'" size="small">{{ item.status === 1 ? 'Activo' : 'Inhabilitado' }}</VChip>
+              <VChip :color="item.status === 1 || item.status === true ? 'success' : 'error'" size="small">
+                {{ item.status === 1 || item.status === true ? 'Activo' : 'Inhabilitado' }}
+              </VChip>
             </template>
             <template #item.action="{ item }">
               <div class="d-flex gap-1">
-                <IconBtn size="small" color="info" variant="tonal" @click="editItem(item)"><VIcon icon="ri-pencil-line" size="25" /></IconBtn>
-                <IconBtn size="small" color="error" variant="tonal" @click="deleteItem(item)"><VIcon icon="ri-delete-bin-line" size="25" /></IconBtn>
+                <template v-if="item.status === 1 || item.status === true">
+                  <IconBtn size="small" color="info" variant="tonal" title="Editar" @click="editItem(item)"><VIcon icon="ri-pencil-line" size="20" /></IconBtn>
+                  <IconBtn size="small" color="error" variant="tonal" title="Inhabilitar" @click="deleteItem(item)"><VIcon icon="ri-delete-bin-line" size="20" /></IconBtn>
+                </template>
+                <template v-else>
+                  <IconBtn size="small" color="success" variant="tonal" title="Habilitar Forma" @click="enableItem(item)"><VIcon icon="ri-checkbox-circle-line" size="20" /></IconBtn>
+                </template>
               </div>
             </template>
           </VDataTable>
