@@ -7,7 +7,6 @@ const headers = [
   { title: 'ID', key: 'id' },
   { title: 'Logotipo', key: 'logo', sortable: false },
   { title: 'Nombre', key: 'name' },
-  { title: 'Descripción', key: 'description' },
   { title: 'Estado', key: 'status' },
   { title: 'Acciones', key: 'action', sortable: false },
 ]

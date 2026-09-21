@@ -27,8 +27,7 @@ onUnmounted(() => {
 const store = async() => {
   let formData = new FormData()
   formData.append('name', name.value)
-  if(description.value) formData.append('description', description.value)
-  formData.append('status', 1)
+    formData.append('status', 1)
   if (image.value) {
     formData.append('image', Array.isArray(image.value) ? image.value[0] : image.value)
   }
@@ -41,7 +40,7 @@ const store = async() => {
       onResponse({ response }){
         if(response.status === 200 || response.status === 201){
           toast.showSuccess('Laboratorio registrado', 'Éxito')
-          name.value = null; description.value = null; image.value = null; previewUrl.value = null;
+          name.value = null; image.value = null; previewUrl.value = null;
           emit('update:isDialogVisible', false)
           emit('addLaboratorio')
         } else {
@@ -79,9 +78,7 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
             <VCol cols="12">
               <VTextField v-model="name" label="Nombre *" @update:model-value="name = $event ? $event.toUpperCase() : ''" style="text-transform: uppercase;" placeholder="Ej: Laboratorios Bagó" :rules="[requiredValidator]" />
             </VCol>
-            <VCol cols="12">
-              <VTextarea v-model="description" label="Descripción (Opcional)" placeholder="Detalles de contacto..." rows="2" />
-            </VCol>
+            
             
             <VCol cols="12" md="8">
               <VFileInput v-model="image" label="Logotipo" accept="image/*" :rules="[optionalImageValidator]" @update:model-value="onImageSelect" />

@@ -9,7 +9,6 @@ const props = defineProps({
 const emit = defineEmits(['update:isDialogVisible', 'editLaboratorio'])
 
 const name = ref('')
-const description = ref('')
 const image = ref(null)
 const previewUrl = ref(null)
 const isLoading = ref(false)
@@ -18,8 +17,7 @@ const toast = useMaterializeToast()
 watch(() => props.laboratorioSelected, (newVal) => {
   if (newVal) {
     name.value = newVal.name || '';
-    description.value = newVal.description || '';
-    previewUrl.value = newVal.image_path ? `/storage/${newVal.image_path}` : null;
+        previewUrl.value = newVal.image_path ? `/storage/${newVal.image_path}` : null;
   }
 }, { immediate: true })
 
@@ -33,8 +31,7 @@ const update = async() => {
   let formData = new FormData()
   formData.append('_method', 'PUT') // Permite enviar Form-Data en un PUT real hacia Laravel
   formData.append('name', name.value)
-  if(description.value) formData.append('description', description.value)
-  if (image.value) {
+    if (image.value) {
     formData.append('image', Array.isArray(image.value) ? image.value[0] : image.value)
   }
 
@@ -83,9 +80,7 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
             <VCol cols="12">
               <VTextField v-model="name" label="Nombre *" @update:model-value="name = $event ? $event.toUpperCase() : ''" style="text-transform: uppercase;" :rules="[requiredValidator]" />
             </VCol>
-            <VCol cols="12">
-              <VTextarea v-model="description" label="Descripción (Opcional)" rows="2" />
-            </VCol>
+            
             
             <VCol cols="12" md="8">
               <VFileInput v-model="image" label="Actualizar Logotipo" accept="image/*" :rules="[optionalImageValidator]" @update:model-value="onImageSelect" />
