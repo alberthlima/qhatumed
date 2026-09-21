@@ -9,21 +9,18 @@ const props = defineProps({
 const emit = defineEmits(['update:isDialogVisible', 'editForma'])
 
 const name = ref('')
-const description = ref('')
 const isLoading = ref(false)
 const toast = useMaterializeToast()
 
 watch(() => props.formaSelected, (newVal) => {
   if (newVal) {
-    name.value = newVal.name;
-    description.value = newVal.description;
+    name.value = newVal.name || '';
   }
 }, { immediate: true })
 
 const update = async() => {
   let formData = new URLSearchParams()
   formData.append('name', name.value)
-  if(description.value) formData.append('description', description.value)
   
   try {
     isLoading.value = true
@@ -68,10 +65,13 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
         <VForm class="mt-4" @submit.prevent="update">
           <VRow>
             <VCol cols="12">
-              <VTextField v-model="name" label="Nombre" :rules="[requiredValidator]" />
-            </VCol>
-            <VCol cols="12">
-              <VTextarea v-model="description" label="Descripción" rows="2" />
+              <VTextField 
+                v-model="name" 
+                label="Nombre *" 
+                :rules="[requiredValidator]" 
+                @update:model-value="name = $event ? $event.toUpperCase() : ''"
+                style="text-transform: uppercase;"
+              />
             </VCol>
             <VCol cols="12" class="d-flex flex-wrap justify-center gap-4 mt-6">
               <VBtn 

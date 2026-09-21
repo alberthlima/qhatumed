@@ -21,10 +21,15 @@ class PharmaceuticalFormController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'status' => 'boolean'
+            'status' => 'nullable|boolean'
         ]);
 
-        $item = PharmaceuticalForm::create($validated);
+        $data = [
+            'name' => mb_strtoupper(trim($validated['name']), 'UTF-8'),
+            'status' => $request->has('status') ? $request->boolean('status') : true
+        ];
+
+        $item = PharmaceuticalForm::create($data);
         return response()->json($item, 201);
     }
 
@@ -37,16 +42,27 @@ class PharmaceuticalFormController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'status' => 'boolean'
+            'status' => 'nullable|boolean'
         ]);
 
-        $pharmaceuticalForm->update($validated);
+        $data = ['name' => mb_strtoupper(trim($validated['name']), 'UTF-8')];
+        if ($request->has('status')) {
+            $data['status'] = $request->boolean('status');
+        }
+
+        $pharmaceuticalForm->update($data);
         return response()->json($pharmaceuticalForm);
     }
 
     public function destroy(PharmaceuticalForm $pharmaceuticalForm)
     {
         $pharmaceuticalForm->update(['status' => false]);
-        return response()->json(['message' => 'Disabled']);
+        return response()->json(['message' => 'Pharmaceutical form disabled']);
+    }
+
+    public function enable(PharmaceuticalForm $pharmaceuticalForm)
+    {
+        $pharmaceuticalForm->update(['status' => true]);
+        return response()->json(['message' => 'Pharmaceutical form enabled', 'data' => $pharmaceuticalForm]);
     }
 }

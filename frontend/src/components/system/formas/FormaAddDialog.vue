@@ -7,15 +7,13 @@ const props = defineProps({
 
 const emit = defineEmits(['update:isDialogVisible', 'addForma'])
 
-const name = ref(null)
-const description = ref(null)
+const name = ref('')
 const isLoading = ref(false)
 const toast = useMaterializeToast()
 
 const store = async() => {
   let formData = new FormData()
   formData.append('name', name.value)
-  if(description.value) formData.append('description', description.value)
   formData.append('status', 1)
 
   try {
@@ -26,7 +24,7 @@ const store = async() => {
       onResponse({ response }){
         if(response.status === 200 || response.status === 201){
           toast.showSuccess('Forma guardada', 'Éxito')
-          name.value = null; description.value = null;
+          name.value = null
           emit('update:isDialogVisible', false)
           emit('addForma')
         } else {
@@ -62,10 +60,14 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
         <VForm class="mt-4" @submit.prevent="store">
           <VRow>
             <VCol cols="12">
-              <VTextField v-model="name" label="Nombre" placeholder="Ej: Comprimido" :rules="[requiredValidator]" />
-            </VCol>
-            <VCol cols="12">
-              <VTextarea v-model="description" label="Descripción (Opcional)" rows="2" />
+              <VTextField 
+                v-model="name" 
+                label="Nombre *" 
+                placeholder="Ej: COMPRIMIDO" 
+                :rules="[requiredValidator]" 
+                @update:model-value="name = $event ? $event.toUpperCase() : ''"
+                style="text-transform: uppercase;"
+              />
             </VCol>
             <VCol cols="12" class="d-flex flex-wrap justify-center gap-4 mt-6">
               <VBtn 

@@ -31,7 +31,8 @@ Route::group([
         Route::apiResource('laboratories', App\Http\Controllers\System\LaboratoryController::class);
     Route::apiResource('suppliers', App\Http\Controllers\System\SupplierController::class);
     Route::apiResource('customers', App\Http\Controllers\System\CustomerController::class);
-    Route::apiResource('pharmaceutical-forms', App\Http\Controllers\System\PharmaceuticalFormController::class);
+    Route::post('pharmaceutical-forms/{pharmaceutical_form}/enable', [App\Http\Controllers\System\PharmaceuticalFormController::class, 'enable']);
+        Route::apiResource('pharmaceutical-forms', App\Http\Controllers\System\PharmaceuticalFormController::class);
     Route::apiResource('dispensers', App\Http\Controllers\DispenserController::class);
     Route::apiResource('products', \App\Http\Controllers\Api\V1\ProductController::class);
 
@@ -54,6 +55,7 @@ Route::group([
         Route::apiResource('customers', App\Http\Controllers\System\CustomerController::class);
         
         // New catalog endpoints for the pharmacy structure
+        Route::post('pharmaceutical-forms/{pharmaceutical_form}/enable', [App\Http\Controllers\System\PharmaceuticalFormController::class, 'enable']);
         Route::apiResource('pharmaceutical-forms', App\Http\Controllers\System\PharmaceuticalFormController::class);
         Route::apiResource('dispensers', App\Http\Controllers\DispenserController::class);
 
