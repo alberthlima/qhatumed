@@ -6,8 +6,10 @@ import ProveedorDeleteDialog from '@/components/system/proveedores/ProveedorDele
 const headers = [
   { title: 'ID', key: 'id' },
   { title: 'Empresa', key: 'name' },
-  { title: 'Representante', key: 'contact_name' },
-  { title: 'Celular', key: 'phone' },
+  { title: 'Contacto', key: 'contact' },
+  { title: 'Teléfono', key: 'phone' },
+  { title: 'Correo', key: 'email' },
+  { title: 'Estado', key: 'status' },
   { title: 'Acciones', key: 'action', sortable: false },
 ]
 
@@ -19,6 +21,7 @@ const list_proveedores = ref([])
 const buscar = ref('')
 const item_edit = ref(null)
 const item_delete = ref(null)
+const toast = useMaterializeToast()
 
 const list = async () => {
   try {
@@ -42,6 +45,21 @@ const editItem = (item) => {
 const deleteItem = (item) => {
   isDeleteDialog.value = true
   item_delete.value = item
+}
+
+const enableItem = async (item) => {
+  try {
+    isLoading.value = true
+    await $api(`/v1/suppliers/${item.id}/enable`, {
+      method: "POST"
+    })
+    toast.showSuccess('Proveedor habilitado nuevamente', 'Éxito')
+    list()
+  } catch (error) {
+    toast.showError('Error al habilitar proveedor', 'Error')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 onMounted(() => {
@@ -70,7 +88,7 @@ definePage({
             <VRow class="justify-space-between">
               <VCol cols="12" md="4">
                 <VTextField
-                  placeholder="Buscar Proveedor"
+                  placeholder="Buscar Proveedor..."
                   density="compact"
                   prepend-inner-icon="ri-search-line"
                   v-model="buscar"
@@ -103,22 +121,22 @@ definePage({
               { value: -1, title: 'Todo' }
             ]"
           >
-            <template #item.id="{ item }">
-              <span class="text-h6">{{ item.id }}</span>
-            </template>
-            <template #item.name="{ item }">
-              <span class="font-weight-bold text-primary">{{ item.name }}</span>
-            </template>
-            <template #item.contact_name="{ item }">
-              <span>{{ item.contact_name || '-' }}</span>
-            </template>
-             <template #item.phone="{ item }">
-              <span>{{ item.phone || '-' }}</span>
+            <template #item.id="{ item }"><span class="text-h6">{{ item.id }}</span></template>
+            <template #item.name="{ item }"><span class="font-weight-medium">{{ item.name }}</span></template>
+            <template #item.status="{ item }">
+              <VChip :color="item.status === 1 || item.status === true ? 'success' : 'error'" size="small">
+                {{ item.status === 1 || item.status === true ? 'Activo' : 'Inhabilitado' }}
+              </VChip>
             </template>
             <template #item.action="{ item }">
               <div class="d-flex gap-1">
-                <IconBtn size="small" color="info" variant="tonal" @click="editItem(item)"><VIcon icon="ri-pencil-line" size="25" /></IconBtn>
-                <IconBtn size="small" color="error" variant="tonal" @click="deleteItem(item)"><VIcon icon="ri-delete-bin-line" size="25" /></IconBtn>
+                <template v-if="item.status === 1 || item.status === true">
+                  <IconBtn size="small" color="info" variant="tonal" title="Editar" @click="editItem(item)"><VIcon icon="ri-pencil-line" size="20" /></IconBtn>
+                  <IconBtn size="small" color="error" variant="tonal" title="Inhabilitar" @click="deleteItem(item)"><VIcon icon="ri-delete-bin-line" size="20" /></IconBtn>
+                </template>
+                <template v-else>
+                  <IconBtn size="small" color="success" variant="tonal" title="Habilitar Proveedor" @click="enableItem(item)"><VIcon icon="ri-checkbox-circle-line" size="20" /></IconBtn>
+                </template>
               </div>
             </template>
           </VDataTable>

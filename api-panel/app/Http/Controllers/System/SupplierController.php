@@ -12,7 +12,8 @@ class SupplierController extends Controller
     {
         $query = Supplier::query();
         if ($request->filled('search')) {
-            $query->where('name', 'LIKE', '%' . $request->search . '%');
+            $query->where('name', 'LIKE', '%' . $request->search . '%')
+                  ->orWhere('contact', 'LIKE', '%' . $request->search . '%');
         }
         return response()->json($query->orderBy('name')->get());
     }
@@ -21,16 +22,21 @@ class SupplierController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
+            'contact' => 'nullable|string|max:255',
             'contact_name' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
-            'address' => 'nullable|string',
-            'tax_id' => 'nullable|string|max:50',
-            'status' => 'boolean'
+            'status' => 'nullable|boolean'
         ]);
 
-        $supplier = Supplier::create($validated);
-        return response()->json($supplier, 201);
+        $data = [
+            'name' => mb_strtoupper(trim($validated['name']), 'UTF-8'),
+            'contact' => $request->contact ?? $request->contact_name ?? null,
+            'phone' => $validated['phone'] ?? null,
+            'status' => $request->has('status') ? $request->boolean('status') : true
+        ];
+
+        $item = Supplier::create($data);
+        return response()->json($item, 201);
     }
 
     public function show(Supplier $supplier)
@@ -42,15 +48,22 @@ class SupplierController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
+            'contact' => 'nullable|string|max:255',
             'contact_name' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
-            'address' => 'nullable|string',
-            'tax_id' => 'nullable|string|max:50',
-            'status' => 'boolean'
+            'status' => 'nullable|boolean'
         ]);
 
-        $supplier->update($validated);
+        $data = [
+            'name' => mb_strtoupper(trim($validated['name']), 'UTF-8'),
+            'contact' => $request->contact ?? $request->contact_name ?? null,
+            'phone' => $validated['phone'] ?? null,
+        ];
+        if ($request->has('status')) {
+            $data['status'] = $request->boolean('status');
+        }
+
+        $supplier->update($data);
         return response()->json($supplier);
     }
 
@@ -58,5 +71,11 @@ class SupplierController extends Controller
     {
         $supplier->update(['status' => false]);
         return response()->json(['message' => 'Supplier disabled']);
+    }
+
+    public function enable(Supplier $supplier)
+    {
+        $supplier->update(['status' => true]);
+        return response()->json(['message' => 'Supplier enabled', 'data' => $supplier]);
     }
 }

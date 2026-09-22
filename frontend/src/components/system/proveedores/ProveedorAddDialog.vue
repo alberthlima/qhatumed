@@ -18,7 +18,8 @@ const toast = useMaterializeToast()
 const store = async() => {
   let formData = new URLSearchParams()
   formData.append('name', name.value)
-  if(contact_name.value) formData.append('contact_name', contact_name.value)
+  if(contact_name.value) formData.append('contact', contact_name.value)
+  formData.append('contact_name', contact_name.value)
   if(phone.value) formData.append('phone', phone.value)
   if(email.value) formData.append('email', email.value)
   if(address.value) formData.append('address', address.value)
@@ -66,7 +67,7 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
         <VForm class="mt-4" @submit.prevent="store">
           <VRow>
             <VCol cols="12">
-              <VTextField v-model="name" label="Nombre Empresa *" placeholder="Ej: Droguería Inti" :rules="[requiredValidator]" />
+              <VTextField v-model="name" label="Nombre Empresa *" @update:model-value="name = $event ? $event.toUpperCase() : ''" style="text-transform: uppercase;" placeholder="Ej: Droguería Inti" :rules="[requiredValidator]" />
             </VCol>
             <VCol cols="12" md="6">
               <VTextField v-model="contact_name" label="Representante (Contacto)" placeholder="Ej: Juan Perez" />

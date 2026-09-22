@@ -19,7 +19,7 @@ const toast = useMaterializeToast()
 watch(() => props.proveedorSelected, (newVal) => {
   if (newVal) {
     name.value = newVal.name || '';
-    contact_name.value = newVal.contact_name || '';
+    contact_name.value = newVal.contact || newVal.contact_name || '';
     phone.value = newVal.phone || '';
     email.value = newVal.email || '';
     address.value = newVal.address || '';
@@ -29,7 +29,8 @@ watch(() => props.proveedorSelected, (newVal) => {
 const update = async() => {
   let formData = new URLSearchParams()
   formData.append('name', name.value)
-  if(contact_name.value) formData.append('contact_name', contact_name.value)
+  if(contact_name.value) formData.append('contact', contact_name.value)
+  formData.append('contact_name', contact_name.value)
   if(phone.value) formData.append('phone', phone.value)
   if(email.value) formData.append('email', email.value)
   if(address.value) formData.append('address', address.value)
@@ -77,7 +78,7 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
         <VForm class="mt-4" @submit.prevent="update">
           <VRow>
             <VCol cols="12">
-              <VTextField v-model="name" label="Nombre Empresa *" :rules="[requiredValidator]" />
+              <VTextField v-model="name" label="Nombre Empresa *" @update:model-value="name = $event ? $event.toUpperCase() : ''" style="text-transform: uppercase;" :rules="[requiredValidator]" />
             </VCol>
             <VCol cols="12" md="6">
               <VTextField v-model="contact_name" label="Representante (Contacto)" />
