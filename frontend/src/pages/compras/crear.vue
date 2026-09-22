@@ -586,16 +586,7 @@ definePage({ meta: { permission: 'listar_compra' } })
             Excel
           </VBtn>
 
-          <VBtn
-            color="warning"
-            variant="flat"
-            size="small"
-            prepend-icon="ri-qr-code-line"
-            class="font-weight-bold text-white"
-            @click="startScanner"
-          >
-            Cámara
-          </VBtn>
+
         </div>
       </VCardTitle>
 
