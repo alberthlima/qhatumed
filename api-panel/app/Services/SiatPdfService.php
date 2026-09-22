@@ -6,7 +6,7 @@ use App\Models\Sale;
 use App\Helpers\NumberTranslateHelper;
 use Barryvdh\DomPDF\Facade\Pdf;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
-use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 /**
  * SiatPdfService
@@ -16,39 +16,76 @@ class SiatPdfService
 {
     /**
      * Genera el PDF de una factura en formato A4 estándar.
-     * 
-     * @param Sale $sale
-     * @return string Contenido binario del PDF
      */
     public function generateInvoice(Sale $sale)
     {
-        $sale->load(['items.product', 'customer', 'user']);
+        return $this->generateLetter($sale);
+    }
 
-        // 1. Datos para el QR (Formato estándar Bolivia)
+    /**
+     * Genera el PDF de una factura en formato de ticket térmico (80mm).
+     */
+    public function generateThermal(Sale $sale)
+    {
+        $sale->loadMissing(['items.product', 'customer', 'user']);
+
         $config = $this->getSiatConfig();
+        $dateFormatted = Carbon::parse($sale->sale_date)->format('d/m/Y H:i');
+
+        // URL Oficial de Consulta QR del SIN para Facturas en Línea
         $qrContent = sprintf(
-            "%s|%s|%s|%s|%.2f|%.2f|%s|%s|0|0|0|0",
+            "https://pilotosiat.impuestos.gob.bo/consulta/QR?nit=%s&cuf=%s&numero=%s&t=1",
             $config['nit'],
             $sale->cuf,
-            $sale->invoice_number,
-            $sale->sale_date->format('d/m/Y'),
-            $sale->total_amount,
-            $sale->total_amount, // Asumimos todo sujeto a IVA
-            '', // Código de control (vacío para facturación en línea v2)
-            $sale->nit_ci
+            $sale->invoice_number
         );
 
-        // Generar QR en base64 para embeber en el PDF
-        $qrBase64 = base64_encode(QrCode::format('svg')->size(150)->generate($qrContent));
-        $qrImage = 'data:image/svg+xml;base64,' . $qrBase64;
+        // Generar QR SVG en base64
+        $qrCode = base64_encode(QrCode::format('svg')->size(120)->generate($qrContent));
+        $literalAmount = NumberTranslateHelper::toLiteral((float)$sale->total_amount);
 
-        // 2. Monto en letras
-        $literalAmount = NumberTranslateHelper::toLiteral($sale->total_amount);
-
-        // 3. Renderizar PDF
-        $pdf = Pdf::loadView('pdf.invoice', [
+        $pdf = Pdf::loadView('siat.factura_termica', [
             'sale'          => $sale,
-            'qrImage'       => $qrImage,
+            'qrCode'        => $qrCode,
+            'qrUrl'         => $qrContent,
+            'dateFormatted' => $dateFormatted,
+            'literalAmount' => $literalAmount,
+            'config'        => $config
+        ]);
+
+        // 80mm de ancho (226.77 pt) con alto dinámico
+        $itemCount = count($sale->items);
+        $height = max(550, 380 + ($itemCount * 30));
+        $pdf->setPaper([0, 0, 226.77, $height], 'portrait');
+
+        return $pdf->output();
+    }
+
+    /**
+     * Genera el PDF de una factura en formato tipo carta (A4).
+     */
+    public function generateLetter(Sale $sale)
+    {
+        $sale->loadMissing(['items.product', 'customer', 'user']);
+
+        $config = $this->getSiatConfig();
+        $dateFormatted = Carbon::parse($sale->sale_date)->format('d/m/Y H:i');
+
+        $qrContent = sprintf(
+            "https://pilotosiat.impuestos.gob.bo/consulta/QR?nit=%s&cuf=%s&numero=%s&t=1",
+            $config['nit'],
+            $sale->cuf,
+            $sale->invoice_number
+        );
+
+        $qrCode = base64_encode(QrCode::format('svg')->size(130)->generate($qrContent));
+        $literalAmount = NumberTranslateHelper::toLiteral((float)$sale->total_amount);
+
+        $pdf = Pdf::loadView('siat.factura_carta', [
+            'sale'          => $sale,
+            'qrCode'        => $qrCode,
+            'qrUrl'         => $qrContent,
+            'dateFormatted' => $dateFormatted,
             'literalAmount' => $literalAmount,
             'config'        => $config
         ]);
@@ -59,85 +96,25 @@ class SiatPdfService
     }
 
     /**
-     * Genera el PDF de una factura en formato de ticket térmico (80mm).
-     * 
-     * @param Sale $sale
-     * @return string Contenido binario del PDF
+     * Genera el PDF de un recibo térmico de venta (80mm) sin datos del SIAT.
      */
-    public function generateThermal(Sale $sale)
+    public function generateReceipt(Sale $sale)
     {
-        $sale->load(['items.product', 'customer', 'user']);
+        $sale->loadMissing(['items.product', 'customer', 'user']);
+        $dateFormatted = Carbon::parse($sale->sale_date)->format('d/m/Y H:i');
 
-        // 1. Datos para el QR
-        $config = $this->getSiatConfig();
-        $qrContent = sprintf(
-            "%s|%s|%s|%s|%.2f|%.2f|%s|%s|0|0|0|0",
-            $config['nit'],
-            $sale->cuf,
-            $sale->invoice_number,
-            $sale->sale_date->format('d/m/Y'),
-            $sale->total_amount,
-            $sale->total_amount,
-            '',
-            $sale->nit_ci
-        );
-
-        $qrCode = base64_encode(QrCode::format('svg')->size(120)->generate($qrContent));
-
-        // 2. Renderizar PDF (ancho de 80mm = 226.77 pt)
-        $pdf = Pdf::loadView('siat.factura_termica', [
-            'sale'   => $sale,
-            'qrCode' => $qrCode,
-            'config' => $config
+        $pdf = Pdf::loadView('siat.recibo_termico', [
+            'sale'          => $sale,
+            'dateFormatted' => $dateFormatted
         ]);
 
-        // Ajustar altura a un valor razonable para un ticket largo
-        $pdf->setPaper([0, 0, 226.77, 600], 'portrait');
+        $itemCount = count($sale->items);
+        $height = max(450, 300 + ($itemCount * 30));
+        $pdf->setPaper([0, 0, 226.77, $height], 'portrait');
 
         return $pdf->output();
     }
 
-    /**
-     * Genera el PDF de una factura en formato tipo carta (A4).
-     * 
-     * @param Sale $sale
-     * @return string Contenido binario del PDF
-     */
-    public function generateLetter(Sale $sale)
-    {
-        $sale->load(['items.product', 'customer', 'user']);
-
-        // 1. Datos para el QR
-        $config = $this->getSiatConfig();
-        $qrContent = sprintf(
-            "%s|%s|%s|%s|%.2f|%.2f|%s|%s|0|0|0|0",
-            $config['nit'],
-            $sale->cuf,
-            $sale->invoice_number,
-            $sale->sale_date->format('d/m/Y'),
-            $sale->total_amount,
-            $sale->total_amount,
-            '',
-            $sale->nit_ci
-        );
-
-        $qrCode = base64_encode(QrCode::format('svg')->size(120)->generate($qrContent));
-
-        // 2. Renderizar PDF
-        $pdf = Pdf::loadView('siat.factura_carta', [
-            'sale'   => $sale,
-            'qrCode' => $qrCode,
-            'config' => $config
-        ]);
-
-        $pdf->setPaper('A4', 'portrait');
-
-        return $pdf->output();
-    }
-
-    /**
-     * Obtiene y unifica la configuración del SIAT con la configuración persistida en BD.
-     */
     private function getSiatConfig(): array
     {
         $config = config('siat') ?? [];
@@ -150,11 +127,8 @@ class SiatPdfService
                 if ($setting->siat_branch_code !== null) $config['sucursal'] = $setting->siat_branch_code;
                 if ($setting->siat_pos_code !== null) $config['punto_venta'] = $setting->siat_pos_code;
             }
-        } catch (\Exception $e) {
-            // Ignorar errores si no está migrado
-        }
+        } catch (\Throwable $e) {}
 
-        // Valores por defecto
         if (empty($config['razon_social'])) $config['razon_social'] = 'FARMACIA MISALUD';
         if (empty($config['nit'])) $config['nit'] = '6789406016';
         if (empty($config['direccion'])) $config['direccion'] = 'Av. Principal #123';
@@ -164,24 +138,5 @@ class SiatPdfService
         }
 
         return $config;
-    }
-
-    /**
-     * Genera el PDF de un recibo térmico de venta (80mm) sin datos del SIAT.
-     * 
-     * @param Sale $sale
-     * @return string Contenido binario del PDF
-     */
-    public function generateReceipt(Sale $sale)
-    {
-        $sale->load(['items.product', 'customer', 'user']);
-
-        $pdf = Pdf::loadView('siat.recibo_termico', [
-            'sale' => $sale
-        ]);
-
-        $pdf->setPaper([0, 0, 226.77, 600], 'portrait');
-
-        return $pdf->output();
     }
 }

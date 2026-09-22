@@ -151,6 +151,33 @@ const showSaleDetails = async (sale) => {
 }
 
 // Envío WhatsApp
+const isEmailDialog = ref(false)
+const emailTarget = ref('')
+const selectedEmailSale = ref(null)
+
+const openEmailDialog = (sale) => {
+  selectedEmailSale.value = sale
+  emailTarget.value = sale.customer?.email || ''
+  isEmailDialog.value = true
+}
+
+const sendEmail = async () => {
+  if (!emailTarget.value) return toast.showWarning('Ingrese un correo válido', 'Atención')
+  try {
+    isLoading.value = true
+    const response = await $api(`/v1/sales/${selectedEmailSale.value.id}/send-email`, {
+      method: 'POST',
+      body: { email: emailTarget.value }
+    })
+    toast.showSuccess(response.message || 'Correo enviado exitosamente', 'Éxito')
+    isEmailDialog.value = false
+  } catch (err) {
+    toast.showError(err.response?._data?.error || 'Error al enviar correo', 'Error')
+  } finally {
+    isLoading.value = false
+  }
+}
+
 const isWhatsAppDialog = ref(false)
 const whatsappPhone = ref('')
 const selectedWhatsAppSale = ref(null)
@@ -436,6 +463,17 @@ onMounted(() => {
             title="Imprimir Térmico"
           />
 
+                    <!-- Email Factura Oficial -->
+          <VBtn
+            v-if="item.cuf && item.status !== 'ANNULLED'"
+            icon="ri-mail-send-line"
+            variant="tonal"
+            color="warning"
+            size="small"
+            @click="openEmailDialog(item)"
+            title="Enviar Factura por Correo"
+          />
+
           <!-- WhatsApp -->
           <VBtn
             v-if="item.status !== 'ANNULLED'"
@@ -658,6 +696,40 @@ onMounted(() => {
               <VIcon start icon="ri-send-plane-line" /> Enviar
             </VBtn>
             <VBtn color="secondary" variant="tonal" class="px-6" @click="isWhatsAppDialog = false">
+              Cancelar
+            </VBtn>
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
+    <!-- MODAL ENVIAR POR EMAIL -->
+    <VDialog v-model="isEmailDialog" max-width="480">
+      <VCard class="rounded-xl pa-4 text-center">
+        <DialogCloseBtn variant="text" size="default" @click="isEmailDialog = false" />
+        <VCardText class="pt-5">
+          <VIcon icon="ri-mail-send-line" color="warning" size="56" class="mb-4" />
+          <h4 class="text-h4 font-weight-bold mb-2">Enviar Factura por Correo</h4>
+          <p class="text-body-2 text-medium-emphasis mb-6">
+            Se enviará la Factura Oficial en PDF (Formato Carta) y el archivo XML firmado por el SIN directamente al cliente.
+          </p>
+
+          <VTextField
+            v-model="emailTarget"
+            label="Correo Electrónico del Cliente"
+            placeholder="cliente@ejemplo.com"
+            variant="outlined"
+            density="comfortable"
+            prepend-inner-icon="ri-mail-line"
+            autofocus
+            class="text-left mb-6"
+          />
+
+          <div class="d-flex justify-center gap-4">
+            <VBtn color="warning" class="px-6 font-weight-bold text-white" :loading="isLoading" :disabled="isLoading" @click="sendEmail">
+              <VIcon start icon="ri-send-plane-fill" /> Enviar Factura
+            </VBtn>
+            <VBtn color="secondary" variant="tonal" class="px-6" :disabled="isLoading" @click="isEmailDialog = false">
               Cancelar
             </VBtn>
           </div>

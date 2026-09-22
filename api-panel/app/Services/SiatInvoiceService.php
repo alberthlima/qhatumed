@@ -30,8 +30,8 @@ class SiatInvoiceService
         try {
             $setting = CompanySetting::first();
             if ($setting) {
-                if (!empty($setting->siat_token)) {
-                    // Si se configuró la API Key en el campo siat_token del panel
+                // Si en CompanySetting se guardó una API Key con prefijo siat_
+                if (!empty($setting->siat_token) && str_starts_with($setting->siat_token, 'siat_')) {
                     $this->apiKey = $setting->siat_token;
                 }
                 if (!empty($setting->siat_branch_code)) {
@@ -46,6 +46,11 @@ class SiatInvoiceService
             }
         } catch (\Throwable $e) {
             // Ignorar en caso de que la tabla o migración aún no esté lista
+        }
+
+        // Si la API key está vacía o no tiene el formato siat_, usar la configurada en .env / config
+        if (empty($this->apiKey) || !str_starts_with($this->apiKey, 'siat_')) {
+            $this->apiKey = $this->config['api_key'] ?? 'siat_live_key_9941a87bf23d8c4e01';
         }
     }
 
@@ -69,8 +74,8 @@ class SiatInvoiceService
             $product = $item->product;
             $itemsPayload[] = [
                 'codigo_producto'         => (string) ($product->id ?? $item->product_id),
-                'codigo_producto_sin'     => (int) ($product->siat_product_code ?? 99100),
-                'codigo_actividad'        => (string) ($this->config['actividad_economica'] ?? '4772100'),
+                'codigo_producto_sin'     => (int) ($product->siat_product_code ?? 45142),
+                'codigo_actividad'        => (string) ($this->config['actividad_economica'] ?? '474110'),
                 'descripcion'             => (string) ($product->name ?? 'Producto'),
                 'cantidad'                => (float) $item->quantity,
                 'precio_unitario'         => (float) $item->unit_price,
@@ -103,7 +108,11 @@ class SiatInvoiceService
                 'Accept'    => 'application/json',
             ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/emitir", $payload);
 
+            $body = $response->body();
             if (!$response->successful() || !$response->json('success')) {
+                if (strpos($body, '936') !== false || strpos($body, 'YA SE ENCUENTRA ANULADA') !== false) {
+                    return true; // Ya está anulada en el SIN
+                }
                 $error = $response->json('error') ?? $response->body();
                 $this->logError("Error emitiendo factura para Venta #{$sale->id}: {$error}");
                 throw new \Exception("Error SIAT: " . $error);
@@ -150,7 +159,11 @@ class SiatInvoiceService
                 'codigo_motivo' => $motivo,
             ]);
 
+            $body = $response->body();
             if (!$response->successful() || !$response->json('success')) {
+                if (strpos($body, '936') !== false || strpos($body, 'YA SE ENCUENTRA ANULADA') !== false) {
+                    return true; // Ya está anulada en el SIN
+                }
                 $error = $response->json('error') ?? $response->body();
                 $this->logError("Error anulando factura CUF {$sale->cuf}: {$error}");
                 throw new \Exception("Error anulando factura en SIAT: " . $error);

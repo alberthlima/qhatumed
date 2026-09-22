@@ -145,4 +145,42 @@ class SaleController extends Controller
             return response()->json(['error' => 'Error al generar PDF: ' . $e->getMessage()], 500);
         }
     }
+
+    public function sendEmail(Request $request, Sale $sale)
+    {
+        $request->validate([
+            'email' => 'required|email'
+        ]);
+
+        if (!$sale->cuf) {
+            return response()->json(['error' => 'La venta no cuenta con factura emitida para enviar.'], 422);
+        }
+
+        try {
+            $pdfService = app(SiatPdfService::class);
+            $pdfContent = $pdfService->generateLetter($sale);
+
+            // Obtener XML desde el microservicio siat-api-service
+            $xmlContent = null;
+            try {
+                $xmlRes = \Illuminate\Support\Facades\Http::timeout(10)->get("http://127.0.0.1:8001/admin/facturas/{$sale->cuf}/xml");
+                if ($xmlRes->successful()) {
+                    $xmlContent = $xmlRes->body();
+                }
+            } catch (\Throwable $e) {}
+
+            \Illuminate\Support\Facades\Mail::to($request->email)
+                ->send(new \App\Mail\FacturaMailable($sale, $pdfContent, $xmlContent));
+
+            return response()->json([
+                'success' => true,
+                'message' => "Factura y XML enviados exitosamente a {$request->email}"
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Error enviando factura por email: " . $e->getMessage());
+            return response()->json([
+                'error' => "No se pudo enviar el correo: " . $e->getMessage()
+            ], 500);
+        }
+    }
 }

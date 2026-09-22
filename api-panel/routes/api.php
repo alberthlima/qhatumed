@@ -68,6 +68,7 @@ Route::group([
         Route::apiResource('purchases', \App\Http\Controllers\Api\V1\PurchaseController::class)->only(['index', 'store', 'show']);
         
         Route::post('sales/{sale}/annul', [\App\Http\Controllers\Api\V1\SaleController::class, 'annul']);
+        Route::post('sales/{sale}/send-email', [\App\Http\Controllers\Api\V1\SaleController::class, 'sendEmail']);
         Route::get('sales/{sale}/print/thermal', [\App\Http\Controllers\Api\V1\SaleController::class, 'printThermal']);
         Route::get('sales/{sale}/print/letter', [\App\Http\Controllers\Api\V1\SaleController::class, 'printLetter']);
         Route::apiResource('sales', \App\Http\Controllers\Api\V1\SaleController::class)->only(['index', 'store', 'show']);

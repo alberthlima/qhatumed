@@ -14,6 +14,12 @@ class Sale extends Model
         'payment_method_code', 'document_type_code', 'is_invoice'
     ];
 
+    protected $casts = [
+        'sale_date'    => 'datetime',
+        'is_invoice'   => 'boolean',
+        'total_amount' => 'decimal:2',
+    ];
+
     public function customer()
     {
         return $this->belongsTo(Customer::class);

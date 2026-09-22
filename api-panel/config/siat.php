@@ -23,6 +23,6 @@ return [
     'razon_social'        => env('SIAT_RAZON_SOCIAL', 'FARMACIA MISALUD'),
     'municipio'           => env('SIAT_MUNICIPIO', 'Santa Cruz'),
     'direccion'           => env('SIAT_DIRECCION', 'Av. Principal #123 (Zona Norte)'),
-    'actividad_economica' => env('SIAT_ACTIVIDAD_ECONOMICA', '4772100'),
+    'actividad_economica' => env('SIAT_ACTIVIDAD_ECONOMICA', '474110'),
     'debug'               => env('SIAT_DEBUG', true),
 ];
