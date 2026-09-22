@@ -33,7 +33,8 @@ Route::group([
     Route::apiResource('customers', App\Http\Controllers\System\CustomerController::class);
     Route::post('pharmaceutical-forms/{pharmaceutical_form}/enable', [App\Http\Controllers\System\PharmaceuticalFormController::class, 'enable']);
         Route::apiResource('pharmaceutical-forms', App\Http\Controllers\System\PharmaceuticalFormController::class);
-    Route::apiResource('dispensers', App\Http\Controllers\DispenserController::class);
+    Route::post('dispensers/{dispenser}/enable', [App\Http\Controllers\DispenserController::class, 'enable']);
+        Route::apiResource('dispensers', App\Http\Controllers\DispenserController::class);
     Route::apiResource('products', \App\Http\Controllers\Api\V1\ProductController::class);
 
     // --- API V1 (Mejores Prácticas) ---
@@ -57,6 +58,7 @@ Route::group([
         // New catalog endpoints for the pharmacy structure
         Route::post('pharmaceutical-forms/{pharmaceutical_form}/enable', [App\Http\Controllers\System\PharmaceuticalFormController::class, 'enable']);
         Route::apiResource('pharmaceutical-forms', App\Http\Controllers\System\PharmaceuticalFormController::class);
+        Route::post('dispensers/{dispenser}/enable', [App\Http\Controllers\DispenserController::class, 'enable']);
         Route::apiResource('dispensers', App\Http\Controllers\DispenserController::class);
 
         Route::post('purchases/{purchase}/annul', [\App\Http\Controllers\Api\V1\PurchaseController::class, 'annul']);

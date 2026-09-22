@@ -71,7 +71,14 @@ const save = async () => {
         <VForm class="mt-4" @submit.prevent="save">
           <VRow>
             <VCol cols="12">
-              <VTextField v-model="formData.name" label="Nombre del Dispenser *" placeholder="Ej: Caja, Blíster, Frasco..." :rules="[requiredValidator]" />
+              <VTextField 
+                v-model="formData.name" 
+                label="Nombre del Dispenser *" 
+                placeholder="Ej: CAJA, BLÍSTER, FRASCO..." 
+                :rules="[requiredValidator]" 
+                @update:model-value="formData.name = $event ? $event.toUpperCase() : ''"
+                style="text-transform: uppercase;"
+              />
             </VCol>
           </VRow>
           

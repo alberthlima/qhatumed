@@ -20,12 +20,16 @@ class DispenserController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:255',
             'status' => 'nullable|integer'
         ]);
 
-        $dispenser = Dispenser::create($request->all());
+        $dispenser = Dispenser::create([
+            'name' => mb_strtoupper(trim($validated['name']), 'UTF-8'),
+            'status' => $request->has('status') ? (int)$request->status : 1
+        ]);
+
         return response()->json($dispenser, 201);
     }
 
@@ -36,20 +40,34 @@ class DispenserController extends Controller
 
     public function update(Request $request, Dispenser $dispenser)
     {
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'status' => 'sometimes|integer'
         ]);
 
-        $dispenser->update($request->all());
+        $data = [];
+        if ($request->has('name')) {
+            $data['name'] = mb_strtoupper(trim($request->name), 'UTF-8');
+        }
+        if ($request->has('status')) {
+            $data['status'] = (int)$request->status;
+        }
+
+        $dispenser->update($data);
         return response()->json($dispenser);
     }
 
     public function destroy(Dispenser $dispenser)
     {
-        // soft delete or generic logical delete usually done via status
         $dispenser->status = 0;
         $dispenser->save();
         return response()->json(['message' => 'Dispenser inactivated'], 200);
+    }
+
+    public function enable(Dispenser $dispenser)
+    {
+        $dispenser->status = 1;
+        $dispenser->save();
+        return response()->json(['message' => 'Dispenser activated', 'data' => $dispenser], 200);
     }
 }
