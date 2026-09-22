@@ -58,7 +58,7 @@ const playBeep = () => {
   }
 }
 
-// ── CÁMARA / SCANNER QR & BARCODE ──
+// ── CÁMARA / SCANNER QR & BARCODE (SOLO MÓVIL) ──
 
 const startScanner = () => {
   isScannerModalOpen.value = true
@@ -260,12 +260,11 @@ watch(searchQuery, async (newVal) => {
   }
 })
 
-// Enter on search input (useful for physical barcode guns)
+// Enter on search input (physical barcode gun support)
 const handleSearchEnter = async () => {
   const query = (searchQuery.value || '').trim()
   if (!query) return
 
-  // Check if exactly matches a barcode or name in current search results
   const exactMatch = searchProducts.value.find(p => p.barcode === query || p.name.toLowerCase() === query.toLowerCase())
   if (exactMatch) {
     addProductToPurchase(exactMatch)
@@ -276,7 +275,6 @@ const handleSearchEnter = async () => {
     return
   }
 
-  // Otherwise query API directly
   try {
     searchLoading.value = true
     const res = await $api(`/v1/products?search=${encodeURIComponent(query)}`, { method: 'GET' })
@@ -360,7 +358,6 @@ const downloadExcelTemplate = () => {
 
   const ws = XLSX.utils.json_to_sheet(templateData)
   
-  // Set custom column widths
   ws['!cols'] = [
     { wch: 18 }, // codigo_barras
     { wch: 35 }, // nombre_producto
@@ -405,7 +402,6 @@ const handleExcelFile = async (event) => {
     const notFoundNames = []
 
     for (const row of rows) {
-      // Clean keys (case-insensitive & trim)
       const normalizedRow = {}
       for (const key of Object.keys(row)) {
         const cleanKey = key.trim().toLowerCase().replace(/\s+/g, '_')
@@ -416,7 +412,6 @@ const handleExcelFile = async (event) => {
       const productName = String(normalizedRow['nombre_producto'] || normalizedRow['producto'] || normalizedRow['nombre'] || normalizedRow['descripcion'] || '').trim()
       const batch = String(normalizedRow['lote'] || normalizedRow['nro_lote'] || '').trim()
       
-      // Parse date format (support YYYY-MM-DD, DD/MM/YYYY, or Excel date numbers)
       let expirationDate = ''
       const rawDate = normalizedRow['fecha_vencimiento'] || normalizedRow['vencimiento'] || normalizedRow['fecha_expiracion'] || ''
       if (rawDate) {
@@ -426,7 +421,6 @@ const handleExcelFile = async (event) => {
         } else if (String(rawDate).includes('/')) {
           const parts = String(rawDate).split('/')
           if (parts.length === 3) {
-            // Assume DD/MM/YYYY
             const day = parts[0].padStart(2, '0')
             const month = parts[1].padStart(2, '0')
             const year = parts[2].length === 2 ? '20' + parts[2] : parts[2]
@@ -444,7 +438,6 @@ const handleExcelFile = async (event) => {
         salePrice = Number((unitCost * 1.35).toFixed(2))
       }
 
-      // Lookup product in catalog
       let matchedProduct = null
 
       if (barcode) {
@@ -456,7 +449,6 @@ const handleExcelFile = async (event) => {
         matchedProduct = allCatalogProducts.value.find(p => p.name.toLowerCase() === pNameLower || p.name.toLowerCase().includes(pNameLower))
       }
 
-      // If still not found in memory, try searching via API
       if (!matchedProduct && (barcode || productName)) {
         try {
           const searchParam = barcode || productName
@@ -514,7 +506,6 @@ const submitPurchase = async () => {
     return
   }
   
-  // Validate items
   for (let i = 0; i < formData.value.items.length; i++) {
     const it = formData.value.items[i]
     if (it.quantity < 1 || it.unit_cost < 0) {
@@ -552,7 +543,7 @@ definePage({ meta: { permission: 'listar_compra' } })
 </script>
 
 <template>
-  <div class="compras-container pa-2 pa-sm-4">
+  <div class="compras-container pa-2 pa-sm-3">
     <!-- Input oculto para archivo Excel -->
     <input
       type="file"
@@ -562,443 +553,467 @@ definePage({ meta: { permission: 'listar_compra' } })
       @change="handleExcelFile"
     />
 
-    <VRow class="ma-0">
-      <VCol cols="12" class="pa-0">
-        <VCard elevation="3" class="rounded-xl border">
-          <!-- CABECERA PRINCIPAL -->
-          <VCardTitle class="py-4 px-4 px-sm-6 bg-primary text-white d-flex justify-space-between align-center flex-wrap gap-2">
-            <div class="d-flex align-center">
-              <VIcon icon="ri-truck-line" size="28" class="me-3" />
-              <div>
-                <h3 class="text-h6 font-weight-bold text-white mb-0">Insertar Compra / Nota de Ingreso</h3>
-                <span class="text-caption text-white text-opacity-80">Gestión de reabastecimiento, inventario y registro de lotes</span>
-              </div>
-            </div>
+    <VCard elevation="2" class="rounded-xl border">
+      <!-- CABECERA PRINCIPAL -->
+      <VCardTitle class="py-3 px-4 px-sm-6 bg-primary text-white d-flex justify-space-between align-center flex-wrap gap-2">
+        <div class="d-flex align-center">
+          <VIcon icon="ri-truck-line" size="24" class="me-2" />
+          <span class="text-subtitle-1 font-weight-bold text-white">Insertar Compra / Nota de Ingreso</span>
+        </div>
 
-            <!-- BOTONES DE ACCIÓN RÁPIDA SUPERIOR -->
-            <div class="d-flex align-center gap-2 flex-wrap">
-              <VBtn
-                color="white"
-                variant="tonal"
-                size="small"
-                prepend-icon="ri-download-2-line"
-                class="font-weight-bold"
-                @click="downloadExcelTemplate"
-              >
-                Plantilla Excel
-              </VBtn>
+        <!-- BOTONES RÁPIDOS MÓVIL (SOLO EN PANTALLAS PEQUEÑAS < 960px) -->
+        <div class="d-flex d-md-none align-center gap-2">
+          <VBtn
+            color="white"
+            variant="tonal"
+            size="small"
+            prepend-icon="ri-download-2-line"
+            class="font-weight-bold"
+            @click="downloadExcelTemplate"
+          >
+            Plantilla
+          </VBtn>
 
-              <VBtn
-                color="success"
-                variant="flat"
-                size="small"
-                prepend-icon="ri-file-excel-2-line"
-                class="font-weight-bold text-white"
-                :loading="isImportingExcel"
-                @click="triggerExcelUpload"
-              >
-                Importar Excel
-              </VBtn>
+          <VBtn
+            color="success"
+            variant="flat"
+            size="small"
+            prepend-icon="ri-file-excel-2-line"
+            class="font-weight-bold text-white"
+            :loading="isImportingExcel"
+            @click="triggerExcelUpload"
+          >
+            Excel
+          </VBtn>
 
-              <VBtn
-                color="secondary"
-                variant="tonal"
-                size="small"
-                prepend-icon="ri-qr-code-line"
-                class="font-weight-bold d-sm-none"
-                @click="startScanner"
-              >
-                Escanear
-              </VBtn>
-            </div>
-          </VCardTitle>
+          <VBtn
+            color="warning"
+            variant="flat"
+            size="small"
+            prepend-icon="ri-qr-code-line"
+            class="font-weight-bold text-white"
+            @click="startScanner"
+          >
+            Cámara
+          </VBtn>
+        </div>
+      </VCardTitle>
 
-          <VCardText class="pt-5 px-3 px-sm-6 pb-6">
-            <VForm @submit.prevent="submitPurchase">
-              <!-- DATOS GENERALES DE LA COMPRA -->
-              <VRow class="mb-4">
-                <VCol cols="12" sm="6" md="3">
-                  <VSelect
-                    v-model="formData.reason"
-                    label="Motivo de Ingreso *"
-                    :items="[
-                      { title: 'Compra Regular', value: 'COMPRA' },
-                      { title: 'Inventario Inicial', value: 'INVENTARIO_INICIAL' }
-                    ]"
-                    item-title="title"
-                    item-value="value"
-                    variant="outlined"
-                    density="comfortable"
-                    prepend-inner-icon="ri-file-transfer-line"
-                    required
-                  />
-                </VCol>
+      <VCardText class="pt-4 px-3 px-sm-5 pb-5">
+        <VForm @submit.prevent="submitPurchase">
+          <!-- DATOS GENERALES DE LA COMPRA (GRID 2 COLS EN MD, 4 EN LG) -->
+          <VRow class="mb-2" density="comfortable">
+            <VCol cols="12" sm="6" lg="3">
+              <VSelect
+                v-model="formData.reason"
+                label="Motivo de Ingreso *"
+                :items="[
+                  { title: 'Compra Regular', value: 'COMPRA' },
+                  { title: 'Inventario Inicial', value: 'INVENTARIO_INICIAL' }
+                ]"
+                item-title="title"
+                item-value="value"
+                variant="outlined"
+                density="compact"
+                prepend-inner-icon="ri-file-transfer-line"
+                hide-details
+                required
+              />
+            </VCol>
 
-                <VCol cols="12" sm="6" md="3">
-                  <VSelect
-                    v-model="formData.supplier_id"
-                    label="Proveedor *"
-                    :items="suppliers"
-                    item-title="name"
-                    item-value="id"
-                    variant="outlined"
-                    density="comfortable"
-                    prepend-inner-icon="ri-building-4-line"
-                    :disabled="formData.reason === 'INVENTARIO_INICIAL'"
-                    :required="formData.reason === 'COMPRA'"
-                    clearable
-                  />
-                </VCol>
+            <VCol cols="12" sm="6" lg="3">
+              <VSelect
+                v-model="formData.supplier_id"
+                label="Proveedor *"
+                :items="suppliers"
+                item-title="name"
+                item-value="id"
+                variant="outlined"
+                density="compact"
+                prepend-inner-icon="ri-building-4-line"
+                :disabled="formData.reason === 'INVENTARIO_INICIAL'"
+                :required="formData.reason === 'COMPRA'"
+                clearable
+                hide-details
+              />
+            </VCol>
 
-                <VCol cols="12" sm="6" md="3">
-                  <VTextField
-                    v-model="formData.invoice_number"
-                    label="N° Factura / Nota Física"
-                    placeholder="Ej. F-98234"
-                    variant="outlined"
-                    density="comfortable"
-                    prepend-inner-icon="ri-file-list-3-line"
-                  />
-                </VCol>
+            <VCol cols="12" sm="6" lg="3">
+              <VTextField
+                v-model="formData.invoice_number"
+                label="N° Factura / Nota Física"
+                placeholder="Ej. F-98234"
+                variant="outlined"
+                density="compact"
+                prepend-inner-icon="ri-file-list-3-line"
+                hide-details
+              />
+            </VCol>
 
-                <VCol cols="12" sm="6" md="3">
-                  <VTextField
-                    v-model="formData.purchase_date"
-                    type="date"
-                    label="Fecha de Ingreso *"
-                    variant="outlined"
-                    density="comfortable"
-                    prepend-inner-icon="ri-calendar-line"
-                    required
-                  />
-                </VCol>
-              </VRow>
+            <VCol cols="12" sm="6" lg="3">
+              <VTextField
+                v-model="formData.purchase_date"
+                type="date"
+                label="Fecha de Ingreso *"
+                variant="outlined"
+                density="compact"
+                prepend-inner-icon="ri-calendar-line"
+                hide-details
+                required
+              />
+            </VCol>
+          </VRow>
 
-              <VDivider class="my-4" />
+          <VDivider class="my-3" />
 
-              <!-- BARRA DE BÚSQUEDA Y HERRAMIENTAS -->
-              <div class="search-toolbar-card pa-3 rounded-xl border bg-surface mb-5 shadow-xs">
-                <VRow align="center" class="ma-0">
-                  <VCol cols="12" md="7" class="pa-1">
-                    <VAutocomplete
-                      v-model="productSearch"
-                      v-model:search="searchQuery"
-                      :loading="searchLoading"
-                      :items="searchProducts"
-                      item-title="name"
-                      item-value="id"
-                      return-object
-                      placeholder="Buscar por medicamento, principio activo o escanear código de barras..."
-                      prepend-inner-icon="ri-search-line"
-                      variant="outlined"
-                      density="comfortable"
-                      hide-no-data
-                      hide-details
-                      autofocus
-                      class="bg-white rounded-lg"
-                      @keydown.enter="handleSearchEnter"
+          <!-- BARRA DE BÚSQUEDA Y ACCIONES DESKTOP -->
+          <div class="search-toolbar-box pa-2 rounded-lg border bg-surface mb-3">
+            <VRow align="center" class="ma-0" density="compact">
+              <!-- BUSCADOR PRINCIPAL (APROVECHA CASI TODO EL ESPACIO EN DESKTOP) -->
+              <VCol cols="12" md="7" lg="8" class="pa-1">
+                <VAutocomplete
+                  v-model="productSearch"
+                  v-model:search="searchQuery"
+                  :loading="searchLoading"
+                  :items="searchProducts"
+                  item-title="name"
+                  item-value="id"
+                  return-object
+                  placeholder="Escriba medicamento o escanee con pistola de barras..."
+                  prepend-inner-icon="ri-search-line"
+                  variant="outlined"
+                  density="compact"
+                  hide-no-data
+                  hide-details
+                  autofocus
+                  class="rounded-lg"
+                  @keydown.enter="handleSearchEnter"
+                >
+                  <template #item="{ props, item }">
+                    <VListItem
+                      v-bind="props"
+                      :title="item.raw.name"
+                      :subtitle="`${item.raw.laboratory ? 'Lab: ' + item.raw.laboratory.name : 'Genérico'} | Código: ${item.raw.barcode || 'S/C'} | Stock: ${item.raw.stock} unds`"
                     >
-                      <template #item="{ props, item }">
-                        <VListItem
-                          v-bind="props"
-                          :title="item.raw.name"
-                          :subtitle="`${item.raw.laboratory ? 'Lab: ' + item.raw.laboratory.name : 'Genérico'} | Código: ${item.raw.barcode || 'S/C'} | Stock Actual: ${item.raw.stock} unds`"
-                        >
-                          <template #append>
-                            <span class="text-caption font-weight-bold text-success">Bs. {{ Number(item.raw.sale_price || 0).toFixed(2) }}</span>
-                          </template>
-                        </VListItem>
+                      <template #append>
+                        <span class="text-caption font-weight-bold text-success">Bs. {{ Number(item.raw.sale_price || 0).toFixed(2) }}</span>
                       </template>
-                    </VAutocomplete>
+                    </VListItem>
+                  </template>
+                </VAutocomplete>
+              </VCol>
+
+              <!-- BOTONES EXCEL EN DESKTOP (VISIBLES EN >= 960px) -->
+              <VCol cols="12" md="5" lg="4" class="pa-1 d-none d-md-flex justify-end align-center gap-2">
+                <VBtn
+                  color="secondary"
+                  variant="tonal"
+                  size="small"
+                  prepend-icon="ri-download-2-line"
+                  class="font-weight-bold"
+                  title="Descargar Plantilla Excel de compras"
+                  @click="downloadExcelTemplate"
+                >
+                  Plantilla Excel
+                </VBtn>
+
+                <VBtn
+                  color="success"
+                  variant="flat"
+                  size="small"
+                  prepend-icon="ri-file-excel-2-line"
+                  class="font-weight-bold text-white"
+                  :loading="isImportingExcel"
+                  title="Cargar archivo Excel con productos"
+                  @click="triggerExcelUpload"
+                >
+                  Importar Excel
+                </VBtn>
+
+                <IconBtn
+                  v-if="formData.items.length > 0"
+                  size="small"
+                  color="error"
+                  variant="tonal"
+                  title="Vaciar lista"
+                  @click="clearAllItems"
+                >
+                  <VIcon icon="ri-delete-bin-line" size="18" />
+                </IconBtn>
+              </VCol>
+
+              <!-- BOTÓN CÁMARA CELULAR EN MÓVIL (< 960px) -->
+              <VCol cols="12" class="pa-1 d-flex d-md-none justify-space-between align-center">
+                <VBtn
+                  color="primary"
+                  variant="flat"
+                  block
+                  prepend-icon="ri-qr-code-line"
+                  class="font-weight-bold"
+                  @click="startScanner"
+                >
+                  Escanear con Celular (Cámara)
+                </VBtn>
+              </VCol>
+            </VRow>
+          </div>
+
+          <!-- VISTA MÓVIL (TARJETAS TOUCH) - visible en < 768px -->
+          <div class="d-block d-md-none mb-3">
+            <div v-if="formData.items.length === 0" class="text-center text-medium-emphasis py-6 border rounded-lg bg-grey-lighten-4">
+              <VIcon icon="ri-shopping-cart-2-line" size="32" class="mb-1 text-disabled" />
+              <div class="text-body-2 font-weight-medium">Busque productos o escanee con la cámara para agregar.</div>
+            </div>
+
+            <div
+              v-for="(item, index) in formData.items"
+              :key="'card-' + index"
+              class="mobile-item-card border rounded-lg mb-2 overflow-hidden bg-surface elevation-1"
+            >
+              <div class="card-top-bar px-3 py-1 d-flex justify-space-between align-center bg-grey-lighten-4 border-b">
+                <div class="d-flex align-center">
+                  <VChip size="x-small" color="primary" class="font-weight-bold me-2">#{{ index + 1 }}</VChip>
+                  <span class="text-caption text-medium-emphasis font-weight-bold">{{ item.laboratory_name || 'GENÉRICO' }}</span>
+                </div>
+                <IconBtn size="small" color="error" variant="text" @click="removeItem(index)">
+                  <VIcon icon="ri-delete-bin-line" size="18" />
+                </IconBtn>
+              </div>
+
+              <div class="pa-2">
+                <div class="font-weight-bold text-body-2 mb-2 text-high-emphasis">{{ item.name }}</div>
+
+                <VRow density="compact" class="mb-1">
+                  <VCol cols="6">
+                    <VTextField
+                      v-model="item.batch"
+                      label="Lote"
+                      placeholder="Opcional"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                    />
                   </VCol>
+                  <VCol cols="6">
+                    <VTextField
+                      v-model="item.expiration_date"
+                      type="date"
+                      label="Vencimiento *"
+                      density="compact"
+                      variant="outlined"
+                      required
+                      hide-details
+                      class="date-input-clean"
+                    />
+                  </VCol>
+                </VRow>
 
-                  <VCol cols="12" md="5" class="pa-1 d-flex gap-2 justify-end flex-wrap">
-                    <VBtn
-                      color="primary"
-                      variant="flat"
-                      prepend-icon="ri-qr-code-line"
-                      class="font-weight-bold"
-                      @click="startScanner"
-                    >
-                      Escanear Celular (Cámara)
-                    </VBtn>
-
-                    <VBtn
-                      v-if="formData.items.length > 0"
-                      color="error"
-                      variant="tonal"
-                      size="default"
-                      icon="ri-delete-bin-line"
-                      title="Limpiar toda la lista"
-                      @click="clearAllItems"
+                <VRow density="compact">
+                  <VCol cols="4">
+                    <VTextField
+                      v-model.number="item.quantity"
+                      type="number"
+                      label="Cantidad *"
+                      min="1"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                    />
+                  </VCol>
+                  <VCol cols="4">
+                    <VTextField
+                      v-model.number="item.unit_cost"
+                      type="number"
+                      step="0.01"
+                      label="Costo Bs *"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      @input="item.sale_price = Number((item.unit_cost * 1.35).toFixed(2))"
+                    />
+                  </VCol>
+                  <VCol cols="4">
+                    <VTextField
+                      v-model.number="item.sale_price"
+                      type="number"
+                      step="0.01"
+                      label="Venta Bs"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
                     />
                   </VCol>
                 </VRow>
               </div>
 
-              <!-- VISTA MÓVIL (TARJETAS TOUCH) - visible en pantallas pequeñas (< 600px) -->
-              <div class="d-block d-sm-none mb-4">
-                <div v-if="formData.items.length === 0" class="text-center text-medium-emphasis py-8 border rounded-xl bg-grey-lighten-4">
-                  <VIcon icon="ri-shopping-cart-2-line" size="40" class="mb-2 text-disabled" />
-                  <div class="text-body-2 font-weight-medium">Utilice el buscador o la cámara para agregar productos a la compra.</div>
-                </div>
-
-                <div
-                  v-for="(item, index) in formData.items"
-                  :key="'card-' + index"
-                  class="mobile-item-card border rounded-xl mb-3 overflow-hidden bg-surface elevation-1"
-                >
-                  <!-- Cabecera de la tarjeta -->
-                  <div class="card-top-bar px-3 py-2 d-flex justify-space-between align-center bg-grey-lighten-4 border-b">
-                    <div class="d-flex align-center">
-                      <VChip size="x-small" color="primary" class="font-weight-bold me-2">#{{ index + 1 }}</VChip>
-                      <span class="text-caption text-medium-emphasis font-weight-bold">{{ item.laboratory_name || 'Genérico' }}</span>
-                    </div>
-                    <IconBtn size="small" color="error" variant="text" @click="removeItem(index)">
-                      <VIcon icon="ri-delete-bin-line" size="20" />
-                    </IconBtn>
-                  </div>
-
-                  <!-- Cuerpo de la tarjeta -->
-                  <div class="pa-3">
-                    <div class="font-weight-bold text-body-2 mb-3 text-high-emphasis">{{ item.name }}</div>
-
-                    <VRow density="compact" class="mb-2">
-                      <VCol cols="6">
-                        <VTextField
-                          v-model="item.batch"
-                          label="Lote (Opcional)"
-                          placeholder="Ej. LOT-123"
-                          density="compact"
-                          variant="outlined"
-                          hide-details
-                        />
-                      </VCol>
-                      <VCol cols="6">
-                        <VTextField
-                          v-model="item.expiration_date"
-                          type="date"
-                          label="Vencimiento *"
-                          density="compact"
-                          variant="outlined"
-                          required
-                          hide-details
-                        />
-                      </VCol>
-                    </VRow>
-
-                    <VRow density="compact" class="mb-2">
-                      <VCol cols="4">
-                        <VTextField
-                          v-model.number="item.quantity"
-                          type="number"
-                          label="Cantidad *"
-                          min="1"
-                          density="compact"
-                          variant="outlined"
-                          hide-details
-                        />
-                      </VCol>
-                      <VCol cols="4">
-                        <VTextField
-                          v-model.number="item.unit_cost"
-                          type="number"
-                          step="0.01"
-                          label="Costo Bs *"
-                          density="compact"
-                          variant="outlined"
-                          hide-details
-                          @input="item.sale_price = Number((item.unit_cost * 1.35).toFixed(2))"
-                        />
-                      </VCol>
-                      <VCol cols="4">
-                        <VTextField
-                          v-model.number="item.sale_price"
-                          type="number"
-                          step="0.01"
-                          label="P. Venta Bs"
-                          density="compact"
-                          variant="outlined"
-                          hide-details
-                        />
-                      </VCol>
-                    </VRow>
-                  </div>
-
-                  <!-- Pie con Subtotal -->
-                  <div class="px-3 py-2 bg-green-lighten-5 border-t d-flex justify-space-between align-center">
-                    <span class="text-caption font-weight-bold text-green-darken-3">Subtotal Ítem:</span>
-                    <span class="text-subtitle-2 font-weight-black text-green-darken-4">Bs. {{ (Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2) }}</span>
-                  </div>
-                </div>
+              <div class="px-3 py-1 bg-green-lighten-5 border-t d-flex justify-space-between align-center">
+                <span class="text-caption font-weight-bold text-green-darken-3">Subtotal:</span>
+                <span class="text-body-2 font-weight-black text-green-darken-4">Bs. {{ (Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2) }}</span>
               </div>
+            </div>
+          </div>
 
-              <!-- VISTA EN TABLA FULL-WIDTH (DESKTOP & LAPTOP) - visible en >= 600px -->
-              <div class="d-none d-sm-block mb-4">
-                <div class="table-responsive-wrapper border rounded-xl overflow-hidden shadow-xs">
-                  <VTable density="comfortable" class="full-width-table align-middle">
-                    <thead>
-                      <tr class="table-header-row bg-grey-lighten-4">
-                        <th class="text-center font-weight-bold text-caption" style="width: 45px;">#</th>
-                        <th class="text-left font-weight-bold text-caption" style="min-width: 250px;">Producto / Laboratorio</th>
-                        <th class="text-left font-weight-bold text-caption" style="width: 140px;">Lote</th>
-                        <th class="text-left font-weight-bold text-caption" style="width: 165px;">Vencimiento *</th>
-                        <th class="text-center font-weight-bold text-caption" style="width: 110px;">Cantidad *</th>
-                        <th class="text-center font-weight-bold text-caption" style="width: 130px;">Costo Unid. Bs *</th>
-                        <th class="text-center font-weight-bold text-caption" style="width: 130px;">Precio Vta Bs</th>
-                        <th class="text-right font-weight-bold text-caption" style="width: 130px;">Subtotal</th>
-                        <th class="text-center" style="width: 50px;"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-if="formData.items.length === 0">
-                        <td colspan="9" class="text-center text-medium-emphasis py-10">
-                          <VIcon icon="ri-inbox-line" size="48" class="mb-2 text-disabled" />
-                          <div class="text-body-1 font-weight-medium">Ningún medicamento anexado a la compra.</div>
-                          <div class="text-caption text-medium-emphasis">Use el buscador superior, escanee con la cámara o importe un archivo Excel.</div>
-                        </td>
-                      </tr>
+          <!-- VISTA EN TABLA OPTIMIZADA (DESKTOP & 17"-19" MONITORS) - visible en >= 768px -->
+          <div class="d-none d-md-block mb-3">
+            <div class="table-compact-container border rounded-lg">
+              <table class="compras-table">
+                <thead>
+                  <tr class="compras-th-row">
+                    <th class="th-center" style="width: 38px;">#</th>
+                    <th class="th-left" style="min-width: 170px;">Producto / Laboratorio</th>
+                    <th class="th-left" style="width: 105px;">Lote</th>
+                    <th class="th-left" style="width: 135px;">Vencimiento *</th>
+                    <th class="th-center" style="width: 80px;">Cant. *</th>
+                    <th class="th-center" style="width: 95px;">Costo Bs *</th>
+                    <th class="th-center" style="width: 95px;">P. Venta Bs</th>
+                    <th class="th-right" style="width: 105px;">Subtotal</th>
+                    <th class="th-center" style="width: 42px;"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="formData.items.length === 0">
+                    <td colspan="9" class="text-center text-medium-emphasis py-8">
+                      <VIcon icon="ri-inbox-line" size="40" class="mb-1 text-disabled" />
+                      <div class="text-body-2 font-weight-medium">Ningún medicamento anexado a la compra.</div>
+                      <div class="text-caption text-medium-emphasis">Use el buscador superior o importe un archivo Excel.</div>
+                    </td>
+                  </tr>
 
-                      <tr v-for="(item, index) in formData.items" :key="'table-' + index" class="table-body-row">
-                        <td class="text-center font-weight-bold text-caption text-medium-emphasis">
-                          {{ index + 1 }}
-                        </td>
-                        <td>
-                          <div class="font-weight-bold text-body-2 text-high-emphasis">{{ item.name }}</div>
-                          <div class="text-caption product-lab">{{ item.laboratory_name || 'GENÉRICO' }}</div>
-                        </td>
-                        <td>
-                          <VTextField
-                            v-model="item.batch"
-                            density="compact"
-                            variant="outlined"
-                            placeholder="Opcional"
-                            hide-details
-                            class="compact-cell-input"
-                          />
-                        </td>
-                        <td>
-                          <VTextField
-                            v-model="item.expiration_date"
-                            type="date"
-                            density="compact"
-                            variant="outlined"
-                            required
-                            hide-details
-                            class="compact-cell-input"
-                          />
-                        </td>
-                        <td>
-                          <VTextField
-                            v-model.number="item.quantity"
-                            type="number"
-                            min="1"
-                            density="compact"
-                            variant="outlined"
-                            hide-details
-                            class="compact-cell-input text-end"
-                          />
-                        </td>
-                        <td>
-                          <VTextField
-                            v-model.number="item.unit_cost"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            density="compact"
-                            variant="outlined"
-                            hide-details
-                            class="compact-cell-input text-end"
-                            @input="item.sale_price = Number((item.unit_cost * 1.35).toFixed(2))"
-                          />
-                        </td>
-                        <td>
-                          <VTextField
-                            v-model.number="item.sale_price"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            density="compact"
-                            variant="outlined"
-                            hide-details
-                            class="compact-cell-input text-end"
-                          />
-                        </td>
-                        <td class="text-right font-weight-black text-body-2 text-green-darken-3 bg-green-lighten-5">
-                          Bs. {{ (Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2) }}
-                        </td>
-                        <td class="text-center">
-                          <IconBtn size="small" color="error" variant="tonal" @click="removeItem(index)" title="Eliminar fila">
-                            <VIcon icon="ri-delete-bin-line" size="18" />
-                          </IconBtn>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </VTable>
+                  <tr v-for="(item, index) in formData.items" :key="'table-' + index" class="compras-tr-row">
+                    <td class="td-center font-weight-bold text-caption text-medium-emphasis">
+                      {{ index + 1 }}
+                    </td>
+                    <td class="td-left">
+                      <div class="product-name-cell">{{ item.name }}</div>
+                      <div class="product-lab-cell">{{ item.laboratory_name || 'GENÉRICO' }}</div>
+                    </td>
+                    <td class="td-left">
+                      <VTextField
+                        v-model="item.batch"
+                        density="compact"
+                        variant="outlined"
+                        placeholder="Opcional"
+                        hide-details
+                        class="cell-input"
+                      />
+                    </td>
+                    <td class="td-left">
+                      <VTextField
+                        v-model="item.expiration_date"
+                        type="date"
+                        density="compact"
+                        variant="outlined"
+                        required
+                        hide-details
+                        class="cell-input date-cell-input"
+                      />
+                    </td>
+                    <td class="td-center">
+                      <VTextField
+                        v-model.number="item.quantity"
+                        type="number"
+                        min="1"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        class="cell-input text-end"
+                      />
+                    </td>
+                    <td class="td-center">
+                      <VTextField
+                        v-model.number="item.unit_cost"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        class="cell-input text-end"
+                        @input="item.sale_price = Number((item.unit_cost * 1.35).toFixed(2))"
+                      />
+                    </td>
+                    <td class="td-center">
+                      <VTextField
+                        v-model.number="item.sale_price"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                        class="cell-input text-end"
+                      />
+                    </td>
+                    <td class="td-right subtotal-cell">
+                      Bs. {{ (Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2) }}
+                    </td>
+                    <td class="td-center">
+                      <IconBtn size="x-small" color="error" variant="tonal" @click="removeItem(index)" title="Eliminar">
+                        <VIcon icon="ri-delete-bin-line" size="16" />
+                      </IconBtn>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- RESUMEN COMPACTO DE TOTALES -->
+          <VCard variant="tonal" color="primary" class="pa-3 rounded-xl mb-4">
+            <VRow align="center" justify="space-between" density="compact">
+              <VCol cols="12" sm="6" class="py-1">
+                <div class="d-flex align-center gap-4">
+                  <div>
+                    <span class="text-caption text-medium-emphasis">Ítems:</span>
+                    <span class="text-subtitle-1 font-weight-bold ms-2">{{ formData.items.length }}</span>
+                  </div>
+                  <VDivider vertical style="height: 24px;" />
+                  <div>
+                    <span class="text-caption text-medium-emphasis">Unidades:</span>
+                    <span class="text-subtitle-1 font-weight-bold ms-2">{{ totalUnits }}</span>
+                  </div>
                 </div>
-              </div>
+              </VCol>
 
-              <!-- RESUMEN Y TOTALES -->
-              <VCard variant="tonal" color="primary" class="pa-4 rounded-xl mt-4 mb-6">
-                <VRow align="center" justify="space-between">
-                  <VCol cols="12" sm="6">
-                    <div class="d-flex align-center gap-4">
-                      <div>
-                        <span class="text-caption text-medium-emphasis">Total Ítems Distintos:</span>
-                        <div class="text-h6 font-weight-bold">{{ formData.items.length }}</div>
-                      </div>
-                      <VDivider vertical style="height: 36px;" />
-                      <div>
-                        <span class="text-caption text-medium-emphasis">Total Unidades:</span>
-                        <div class="text-h6 font-weight-bold">{{ totalUnits }}</div>
-                      </div>
-                    </div>
-                  </VCol>
+              <VCol cols="12" sm="6" class="text-start text-sm-end py-1">
+                <span class="text-caption font-weight-bold text-uppercase text-medium-emphasis me-2">Costo Total Compra:</span>
+                <span class="text-h5 font-weight-black text-primary">
+                  Bs. {{ totalPurchase.toFixed(2) }}
+                </span>
+              </VCol>
+            </VRow>
+          </VCard>
 
-                  <VCol cols="12" sm="6" class="text-start text-sm-end">
-                    <span class="text-caption text-medium-emphasis text-uppercase font-weight-bold">Costo Total Compra</span>
-                    <div class="text-h4 font-weight-black text-primary">
-                      Bs. {{ totalPurchase.toFixed(2) }}
-                    </div>
-                    <div class="text-caption text-medium-emphasis">
-                      El Costo Promedio Ponderado (CPP) del inventario se recalculará al confirmar.
-                    </div>
-                  </VCol>
-                </VRow>
-              </VCard>
+          <!-- BOTONES DE ACCIÓN FINAL -->
+          <div class="d-flex flex-column flex-sm-row justify-end gap-2">
+            <VBtn
+              color="secondary"
+              variant="outlined"
+              size="default"
+              class="font-weight-bold"
+              @click="router.push('/compras')"
+            >
+              <VIcon start icon="ri-close-line" /> Descartar
+            </VBtn>
 
-              <!-- BOTONES DE ACCIÓN FINAL -->
-              <div class="d-flex flex-column flex-sm-row justify-end gap-3">
-                <VBtn
-                  color="secondary"
-                  variant="outlined"
-                  size="large"
-                  class="font-weight-bold"
-                  @click="router.push('/compras')"
-                >
-                  <VIcon start icon="ri-close-line" /> Descartar
-                </VBtn>
+            <VBtn
+              color="success"
+              type="submit"
+              size="default"
+              elevation="3"
+              :loading="isLoading"
+              :disabled="isLoading || formData.items.length === 0"
+              class="font-weight-bold text-white px-6"
+            >
+              <VIcon start icon="ri-checkbox-circle-line" /> Procesar Compra y Sincronizar Stock
+            </VBtn>
+          </div>
+        </VForm>
+      </VCardText>
+    </VCard>
 
-                <VBtn
-                  color="success"
-                  type="submit"
-                  size="large"
-                  elevation="4"
-                  :loading="isLoading"
-                  :disabled="isLoading || formData.items.length === 0"
-                  class="font-weight-bold text-white px-8"
-                >
-                  <VIcon start icon="ri-checkbox-circle-line" /> Procesar Compra y Sincronizar Stock
-                </VBtn>
-              </div>
-            </VForm>
-          </VCardText>
-        </VCard>
-      </VCol>
-    </VRow>
-
-    <!-- DIALOG DE ESCANEO POR CÁMARA Y ASOCIACIÓN -->
-    <VDialog v-model="isScannerModalOpen" max-width="600" persistent>
+    <!-- DIALOG DE ESCANEO POR CÁMARA (SOLO MÓVIL) -->
+    <VDialog v-model="isScannerModalOpen" max-width="500" persistent>
       <VCard class="rounded-xl overflow-hidden">
         <VCardTitle class="bg-primary text-white d-flex justify-space-between align-center py-3 px-4">
           <span class="d-flex align-center text-subtitle-1 font-weight-bold">
@@ -1007,28 +1022,25 @@ definePage({ meta: { permission: 'listar_compra' } })
           <VBtn icon="ri-close-line" variant="text" color="white" size="small" @click="stopScanner" />
         </VCardTitle>
 
-        <VCardText class="px-3 px-sm-6 pt-5 pb-6 text-center">
-          <!-- Estado 1: Escaneando -->
+        <VCardText class="px-3 px-sm-5 pt-4 pb-5 text-center">
           <div v-show="!isAssociating">
-            <p class="text-body-2 text-medium-emphasis mb-3">
-              Enfoque el código de barras del medicamento con la cámara de su dispositivo
+            <p class="text-caption text-medium-emphasis mb-2">
+              Enfoque el código de barras con la cámara del celular
             </p>
-            <div id="reader" style="width: 100%; max-width: 480px; margin: 0 auto; background: #fafafa; border-radius: 12px; overflow: hidden; min-height: 240px; border: 1px solid #e0e0e0;"></div>
-            <div class="d-flex justify-center gap-2 mt-4">
+            <div id="reader" style="width: 100%; max-width: 440px; margin: 0 auto; background: #fafafa; border-radius: 10px; overflow: hidden; min-height: 220px; border: 1px solid #e0e0e0;"></div>
+            <div class="d-flex justify-center gap-2 mt-3">
               <VBtn color="warning" variant="tonal" size="small" v-if="isScanning" prepend-icon="ri-pause-line" @click="pauseScanner">
-                Pausar Cámara
+                Pausar
               </VBtn>
               <VBtn color="success" variant="tonal" size="small" v-else prepend-icon="ri-play-line" @click="resumeScanner">
-                Reanudar Cámara
+                Reanudar
               </VBtn>
             </div>
           </div>
 
-          <!-- Estado 2: Asociando código desconocido -->
           <div v-if="isAssociating" class="text-left pt-2">
-            <VAlert type="warning" variant="tonal" class="mb-4 text-body-2 rounded-lg">
-              El código escaneado <strong>"{{ scannedBarcode }}"</strong> no está registrado en el catálogo.
-              Asócielo a un medicamento existente para continuar.
+            <VAlert type="warning" variant="tonal" class="mb-3 text-caption rounded-lg">
+              Código <strong>"{{ scannedBarcode }}"</strong> no registrado. Asócielo a un medicamento:
             </VAlert>
 
             <VAutocomplete
@@ -1039,11 +1051,11 @@ definePage({ meta: { permission: 'listar_compra' } })
               item-title="name"
               item-value="id"
               return-object
-              placeholder="Escriba el nombre del medicamento para vincular..."
+              placeholder="Buscar medicamento..."
               prepend-inner-icon="ri-search-line"
               variant="outlined"
-              density="comfortable"
-              class="mb-4"
+              density="compact"
+              class="mb-3"
               hide-no-data
             >
               <template #selection="{ item }">
@@ -1055,15 +1067,15 @@ definePage({ meta: { permission: 'listar_compra' } })
                 <VListItem 
                   v-bind="props" 
                   :title="item.raw.name" 
-                  :subtitle="`${item.raw.laboratory ? 'Lab: ' + item.raw.laboratory.name : 'Sin Laboratorio'} | Código: ${item.raw.barcode || 'Ninguno'}`"
+                  :subtitle="`${item.raw.laboratory ? 'Lab: ' + item.raw.laboratory.name : 'Genérico'} | Código: ${item.raw.barcode || 'S/C'}`"
                 />
               </template>
             </VAutocomplete>
 
-            <div class="d-flex justify-end gap-2 mt-4">
-              <VBtn color="secondary" variant="outlined" @click="resumeScanner">Cancelar y Reanudar</VBtn>
-              <VBtn color="primary" :disabled="!selectedProductForAssociation" :loading="isLoading" @click="associateBarcodeToProduct">
-                Vincular y Agregar
+            <div class="d-flex justify-end gap-2 mt-3">
+              <VBtn color="secondary" variant="outlined" size="small" @click="resumeScanner">Cancelar</VBtn>
+              <VBtn color="primary" size="small" :disabled="!selectedProductForAssociation" :loading="isLoading" @click="associateBarcodeToProduct">
+                Vincular
               </VBtn>
             </div>
           </div>
@@ -1078,41 +1090,81 @@ definePage({ meta: { permission: 'listar_compra' } })
   max-width: 100%;
 }
 
-.table-responsive-wrapper {
+.table-compact-container {
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-.full-width-table {
-  min-width: 980px;
+.compras-table {
   width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
 }
 
-.table-header-row th {
-  padding: 12px 14px !important;
-  color: #4b5563 !important;
+.compras-th-row th {
+  padding: 8px 6px !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid #e5e7eb !important;
+  letter-spacing: 0.3px;
+  background-color: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+  color: #475569;
+  white-space: nowrap;
 }
 
-.table-body-row td {
-  padding: 8px 10px !important;
-  border-bottom: 1px solid #f3f4f6 !important;
+.compras-tr-row td {
+  padding: 5px 4px !important;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
 }
 
-.product-lab {
-  color: #009688 !important;
+.th-left, .td-left { text-align: left; }
+.th-center, .td-center { text-align: center; }
+.th-right, .td-right { text-align: right; }
+
+.product-name-cell {
+  font-weight: 600;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  color: #1e293b;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-lab-cell {
+  color: #0d9488 !important; /* Emerald Teal */
   font-weight: 700;
-  font-size: 0.72rem;
-  letter-spacing: 0.5px;
+  font-size: 0.7rem;
+  letter-spacing: 0.4px;
 }
 
-.compact-cell-input :deep(.v-field__input) {
-  padding-top: 6px !important;
-  padding-bottom: 6px !important;
-  font-size: 0.85rem !important;
+.subtotal-cell {
+  font-weight: 800;
+  font-size: 0.82rem;
+  color: #166534 !important;
+  background-color: #f0fdf4 !important;
+  padding-right: 8px !important;
+  white-space: nowrap;
+}
+
+.cell-input :deep(.v-field__input) {
+  padding: 4px 6px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  font-size: 0.8rem !important;
+}
+
+.cell-input :deep(.v-field) {
+  border-radius: 6px !important;
+}
+
+.date-cell-input :deep(input[type="date"]) {
+  padding: 2px 2px !important;
+  font-size: 0.78rem !important;
 }
 
 .mobile-item-card {
@@ -1120,6 +1172,25 @@ definePage({ meta: { permission: 'listar_compra' } })
 }
 
 .mobile-item-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Dark mode compatibility */
+@media (prefers-color-scheme: dark) {
+  .compras-th-row th {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+  }
+  .compras-tr-row td {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .product-name-cell {
+    color: #e2e8f0;
+  }
+  .subtotal-cell {
+    background-color: rgba(22, 101, 52, 0.2) !important;
+    color: #4ade80 !important;
+  }
 }
 </style>
