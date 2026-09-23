@@ -5,7 +5,7 @@ import { useCashSession } from '@/composables/useCashSession'
 
 const toast = useMaterializeToast()
 
-// --- Estado de la Caja ---
+// ── ESTADO DE CAJA ──
 const { session: cashSession, isLoading: isLoadingSession, hasOpenSession, checkSession } = useCashSession()
 const isOpenCashDialog = ref(false)
 const cashRegistersList = ref([])
@@ -30,7 +30,7 @@ const handleOpenCashFromPOS = async () => {
     })
     isOpenCashDialog.value = false
     toast.showSuccess('Caja aperturada con éxito', 'Éxito')
-    await checkSession() // Refrescar estado de caja en el POS
+    await checkSession()
   } catch (e) {
     toast.showError(e.response?._data?.error || 'Error al abrir caja', 'Error')
   } finally {
@@ -43,45 +43,53 @@ const openCashDialog = async () => {
   isOpenCashDialog.value = true
 }
 
-// Estado del POS
+// ── ESTADO DEL POS ──
 const cart = ref([])
 const searchQuery = ref('')
-const categoryFilter = ref(null)
+const categoryFilter = ref('')
 const cashTendered = ref(0)
 const discount = ref(0)
 const saleDate = ref(new Date().toISOString().slice(0, 10))
 
-// Estados de Datos Reales
+// Datos
 const products = ref([])
 const categories = ref([])
 const customers = ref([])
 const selectedCustomer = ref(null)
 const isFetching = ref(false)
 
-// Estados de Facturación SIAT
+// Facturación SIAT
 const isInvoice = ref(true)
-const businessName = ref('')
-const nitCi = ref('')
-const paymentMethod = ref(1) // 1: Efectivo por defecto
-const documentType = ref(1)   // 1: CI por defecto
+const businessName = ref('CONTROL TRIBUTARIO')
+const nitCi = ref('0')
+const paymentMethod = ref(1) // 1: Efectivo, 2: Tarjeta, 7: QR
+const documentType = ref(1)   // 1: CI
 const isAddClientDialog = ref(false)
+const isFiscalAccordionOpen = ref(false)
 
 // Modal de Resultado
 const isResultDialog = ref(false)
 const saleResult = ref(null)
+
+// Métodos de Pago visuales
+const paymentMethodsList = [
+  { value: 1, title: 'Efectivo', icon: 'ri-money-dollar-circle-line' },
+  { value: 2, title: 'Tarjeta', icon: 'ri-bank-card-line' },
+  { value: 7, title: 'QR / Transfer.', icon: 'ri-qr-code-line' }
+]
 
 // ── DATA FETCHING ──
 
 const fetchProducts = async (search = '') => {
   try {
     isFetching.value = true
-    const response = await $api(`/v1/products?per_page=100&search=${search}`)
+    const response = await $api(`/v1/products?per_page=100&search=${encodeURIComponent(search)}`)
     products.value = response.data || response || []
     
-    // Extraer categorías únicas solo en la carga inicial
-    if (!search) {
+    // Extraer categorías únicas en carga inicial
+    if (!search && categories.value.length === 0) {
       const cats = new Set()
-      products.value.forEach(p => { if(p.category) cats.add(p.category.name) })
+      products.value.forEach(p => { if (p.category?.name) cats.add(p.category.name) })
       categories.value = Array.from(cats)
     }
   } catch (error) {
@@ -114,7 +122,7 @@ const filteredProducts = computed(() => {
 })
 
 const subtotal = computed(() => {
-  return cart.value.reduce((total, item) => total + (item.sale_price * item.quantity), 0)
+  return cart.value.reduce((total, item) => total + (Number(item.sale_price || 0) * item.quantity), 0)
 })
 
 const total = computed(() => {
@@ -135,14 +143,21 @@ watch(selectedCustomer, (newVal) => {
   if (newVal) {
     const customer = customers.value.find(c => c.id === newVal)
     if (customer) {
-      businessName.value = customer.first_name || ''
-      nitCi.value = customer.document_number || ''
+      businessName.value = `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || customer.first_name || 'S/N'
+      nitCi.value = customer.document_number || '0'
       documentType.value = customer.document_type || 1
     }
   } else {
-    businessName.value = 'S/N'
+    businessName.value = 'CONTROL TRIBUTARIO'
     nitCi.value = '0'
     documentType.value = 1
+  }
+})
+
+// Auto-completar cashTendered si es efectivo y total cambia
+watch(total, (newTotal) => {
+  if (paymentMethod.value === 1 && (cashTendered.value === 0 || cashTendered.value < newTotal)) {
+    cashTendered.value = newTotal
   }
 })
 
@@ -150,10 +165,36 @@ const addToCart = (product) => {
   if (product.stock <= 0 || product.is_expired) return
   const existingItem = cart.value.find(item => item.id === product.id)
   if (existingItem) {
-    if (existingItem.quantity < product.stock) existingItem.quantity++
+    if (existingItem.quantity < product.stock) {
+      existingItem.quantity++
+    } else {
+      toast.showWarning(`Stock máximo alcanzado (${product.stock} unds)`, 'Stock')
+    }
   } else {
     cart.value.push({ ...product, quantity: 1 })
   }
+}
+
+const updateQuantity = (item, delta) => {
+  const newQty = item.quantity + delta
+  if (newQty <= 0) {
+    const idx = cart.value.findIndex(i => i.id === item.id)
+    if (idx !== -1) cart.value.splice(idx, 1)
+  } else if (newQty <= item.stock) {
+    item.quantity = newQty
+  } else {
+    toast.showWarning(`Stock máximo alcanzado (${item.stock} unds)`, 'Stock')
+  }
+}
+
+const removeItem = (index) => {
+  cart.value.splice(index, 1)
+}
+
+const clearCart = () => {
+  cart.value = []
+  cashTendered.value = 0
+  discount.value = 0
 }
 
 const checkout = async () => {
@@ -161,11 +202,11 @@ const checkout = async () => {
 
   const payload = {
     customer_id: selectedCustomer.value,
-    business_name: businessName.value || 'S/N',
+    business_name: businessName.value || 'CONTROL TRIBUTARIO',
     nit_ci: nitCi.value || '0',
     sale_date: saleDate.value,
     total_amount: total.value,
-    cash_tendered: cashTendered.value,
+    cash_tendered: cashTendered.value || total.value,
     change: change.value,
     payment_method_code: paymentMethod.value,
     document_type_code: documentType.value,
@@ -189,11 +230,9 @@ const checkout = async () => {
     isResultDialog.value = true
     
     // Limpiar carrito y resetear
-    cart.value = []
-    cashTendered.value = 0
-    discount.value = 0
+    clearCart()
     saleDate.value = new Date().toISOString().slice(0, 10)
-    fetchProducts() // Refrescar stock
+    fetchProducts(searchQuery.value)
   } catch (error) {
     const errorMsg = error.response?._data?.error || 'Error al procesar la venta'
     toast.showError(errorMsg, 'Error en POS')
@@ -217,282 +256,411 @@ watch(searchQuery, (newVal) => {
 </script>
 
 <template>
-  <VRow class="pos-layout ma-0 overflow-hidden">
-    <!-- COLUMNA IZQUIERDA: CARRITO Y FACTURACIÓN -->
-    <VCol cols="12" md="4" lg="3" class="cart-sidebar pa-2 h-100 d-flex flex-column">
-      <VCard class="flex-grow-1 d-flex flex-column border rounded-xl shadow-lg" elevation="0">
-        <!-- HEADER CARRITO -->
-        <div class="pa-4 bg-primary text-white d-flex align-center justify-space-between rounded-t-xl">
-          <div class="d-flex align-center">
-            <VIcon icon="ri-shopping-basket-line" class="mr-2" size="24"/>
-            <span class="text-h6 font-weight-bold">Venta Actual</span>
-          </div>
-          <VChip color="white" text-color="primary" density="comfortable" class="font-weight-black">
-            {{ cart.length }}
-          </VChip>
+  <div class="pos-wrapper">
+    <VRow class="pos-main-row ma-0 h-100">
+      
+      <!-- ========================================== -->
+      <!-- COLUMNA IZQUIERDA / CENTRAL: CATÁLOGO Y BÚSQUEDA (68% en Desktop) -->
+      <!-- ========================================== -->
+      <VCol cols="12" md="7" lg="8" class="pos-catalog-col pa-3 d-flex flex-column">
+        
+        <!-- BARRA SUPERIOR DE BÚSQUEDA Y USUARIO -->
+        <div class="catalog-header-card pa-3 bg-surface rounded-xl border mb-3 shadow-xs">
+          <VRow align="center" no-gutters class="gap-2">
+            <VCol class="flex-grow-1">
+              <VTextField
+                v-model="searchQuery"
+                prepend-inner-icon="ri-search-line"
+                placeholder="Buscar por medicamento, principio activo o código de barras..."
+                variant="outlined"
+                density="comfortable"
+                hide-details
+                clearable
+                autofocus
+                class="search-pos-input rounded-lg"
+              />
+            </VCol>
+
+            <VCol cols="auto" class="d-flex align-center gap-2">
+              <VChip 
+                v-if="hasOpenSession" 
+                color="success" 
+                variant="tonal" 
+                size="small" 
+                class="font-weight-bold"
+              >
+                <VIcon start icon="ri-safe-2-line" size="16" /> Caja Abierta
+              </VChip>
+
+              <VBtn
+                v-else
+                color="error"
+                size="small"
+                variant="flat"
+                class="font-weight-bold text-white"
+                @click="openCashDialog"
+              >
+                <VIcon start icon="ri-lock-line" size="16" /> Abrir Caja
+              </VBtn>
+            </VCol>
+          </VRow>
         </div>
 
-        <!-- ITEMS DEL CARRITO -->
-        <div v-if="!isLoadingSession && !hasOpenSession" class="pa-4 bg-error-lighten-5 border-b text-center">
-          <VIcon icon="ri-lock-line" size="40" color="error" class="mb-2" />
-          <h4 class="text-subtitle-1 font-weight-black text-error mb-1">Caja Cerrada</h4>
-          <p class="text-caption text-medium-emphasis mb-3">Debe aperturar un turno de caja antes de realizar ventas.</p>
-          <VBtn
-            color="error"
-            size="small"
-            block
-            elevation="2"
-            class="font-weight-bold rounded-lg"
-            @click="openCashDialog"
-          >
-            <VIcon start icon="ri-safe-2-line" />
-            Aperturar Turno de Caja
-          </VBtn>
+        <!-- CATEGORÍAS EN PILLS / CAROUSEL -->
+        <div class="categories-bar mb-3">
+          <div class="d-flex align-center gap-2 overflow-x-auto py-1 px-1 categories-scroll">
+            <button
+              class="category-pill"
+              :class="{ active: categoryFilter === '' }"
+              @click="categoryFilter = ''"
+            >
+              <VIcon icon="ri-apps-2-line" size="18" class="me-1" />
+              <span>Todos</span>
+            </button>
+
+            <button
+              v-for="cat in categories"
+              :key="cat"
+              class="category-pill"
+              :class="{ active: categoryFilter === cat }"
+              @click="categoryFilter = cat"
+            >
+              <VIcon icon="ri-capsule-line" size="18" class="me-1" />
+              <span>{{ cat }}</span>
+            </button>
+          </div>
         </div>
 
-        <div class="flex-grow-1 overflow-y-auto px-2 pt-2 cart-list">
-          <div v-if="cart.length === 0" class="h-100 d-flex flex-column align-center justify-center opacity-40 py-10">
-            <VIcon icon="ri-shopping-cart-2-line" size="64" class="mb-2"/>
-            <p class="text-subtitle-1">Carrito vacío</p>
-          </div>
-          
-          <VList v-else lines="two" class="bg-transparent pa-0">
-            <VListItem v-for="(item, index) in cart" :key="item.id" class="px-2 py-2 mb-2 bg-surface rounded-lg border">
-              <template #prepend>
-                <VAvatar rounded variant="tonal" color="primary" size="48">
-                  <VImg v-if="item.image_path" :src="`/storage/${item.image_path}`" />
-                  <span v-else class="text-h6 font-weight-bold">{{ item.name.charAt(0) }}</span>
-                </VAvatar>
-              </template>
-              
-              <VListItemTitle class="font-weight-bold text-body-1">{{ item.name }}</VListItemTitle>
-              <VListItemSubtitle class="text-primary font-weight-bold">
-                Bs. {{ Number(item.sale_price).toFixed(2) }} 
-                <span class="text-caption text-medium-emphasis ml-1">x {{ item.quantity }}</span>
-              </VListItemSubtitle>
-              
-              <template #append>
-                <div class="d-flex flex-column align-center gap-1">
-                  <VBtn density="compact" variant="tonal" icon="ri-close-line" size="small" @click="cart.splice(index, 1)" color="error"/>
-                  <div class="d-flex align-center bg-grey-lighten-4 rounded-pill px-1 border">
-                    <VBtn density="compact" variant="text" icon="ri-subtract-line" size="small" @click="item.quantity > 1 ? item.quantity-- : cart.splice(index, 1)"/>
-                    <span class="px-2 font-weight-bold">{{ item.quantity }}</span>
-                    <VBtn density="compact" variant="text" icon="ri-add-line" size="small" @click="item.quantity < item.stock ? item.quantity++ : null" color="success"/>
+        <!-- GRILLA DE MEDICAMENTOS / PRODUCTOS -->
+        <div class="product-grid-container flex-grow-1 overflow-y-auto px-1">
+          <VRow v-if="!isFetching && filteredProducts.length > 0" class="ma-n1">
+            <VCol 
+              v-for="item in filteredProducts" 
+              :key="item.id" 
+              cols="12" 
+              sm="6" 
+              md="4" 
+              lg="4" 
+              xl="3" 
+              class="pa-1"
+            >
+              <div 
+                class="pos-product-card"
+                :class="{ 
+                  'is-disabled': item.stock <= 0 || item.is_expired,
+                  'is-in-cart': cart.some(c => c.id === item.id)
+                }"
+                @click="addToCart(item)"
+              >
+                <!-- Badge de Stock Flotante -->
+                <div class="card-badge-top">
+                  <span 
+                    v-if="item.stock > 0 && !item.is_expired" 
+                    class="stock-tag"
+                    :class="item.stock > 10 ? 'stock-ok' : 'stock-low'"
+                  >
+                    Stock: {{ item.stock }}
+                  </span>
+                  <span v-else-if="item.stock <= 0" class="stock-tag stock-out">
+                    AGOTADO
+                  </span>
+                  <span v-else class="stock-tag stock-expired">
+                    VENCIDO
+                  </span>
+                </div>
+
+                <!-- Imagen o Thumbnail -->
+                <div class="product-img-box">
+                  <VImg 
+                    :src="item.image_path ? `/storage/${item.image_path}` : 'https://placehold.co/300x200/E8F5E9/009688?text='+encodeURIComponent(item.name.substring(0,6))" 
+                    height="100" 
+                    cover
+                    class="rounded-lg"
+                  />
+                </div>
+
+                <!-- Info del Producto -->
+                <div class="product-info-box">
+                  <div class="product-lab-tag">{{ item.laboratory?.name || 'GENÉRICO' }}</div>
+                  <h4 class="product-name" :title="item.name">{{ item.name }}</h4>
+                  
+                  <div class="d-flex justify-space-between align-center mt-2 pt-1 border-t">
+                    <span class="product-price">Bs. {{ Number(item.sale_price || 0).toFixed(2) }}</span>
+                    <button 
+                      class="btn-add-item" 
+                      :disabled="item.stock <= 0 || item.is_expired"
+                      title="Agregar al carrito"
+                    >
+                      <VIcon icon="ri-add-line" size="18" />
+                    </button>
                   </div>
                 </div>
-              </template>
-            </VListItem>
-          </VList>
+              </div>
+            </VCol>
+          </VRow>
+
+          <!-- Vacío o Buscando -->
+          <div v-else-if="!isFetching && filteredProducts.length === 0" class="empty-products-state">
+            <VIcon icon="ri-inbox-line" size="56" class="text-disabled mb-2" />
+            <div class="text-h6 font-weight-bold text-medium-emphasis">No se encontraron medicamentos</div>
+            <p class="text-caption text-disabled">Intente con otro término de búsqueda o categoría.</p>
+          </div>
+
+          <!-- Spinner de Carga -->
+          <div v-else class="h-100 d-flex align-center justify-center py-12">
+            <VProgressCircular indeterminate color="primary" size="56" />
+          </div>
         </div>
+      </VCol>
 
-        <VDivider />
-
-        <!-- SECCIÓN DE FACTURACIÓN SIAT -->
-        <div class="pa-4 bg-grey-lighten-5">
-          <!-- Fecha de Venta para Inventario Retroactivo -->
-          <div class="mb-3">
-            <VTextField 
-              v-model="saleDate" 
-              type="date" 
-              label="Fecha de Venta" 
-              density="compact" 
-              variant="outlined" 
-              prepend-inner-icon="ri-calendar-line"
-              hide-details 
-            />
+      <!-- ========================================== -->
+      <!-- COLUMNA DERECHA: ORDEN / CARRITO / CHECKOUT (32% en Desktop - "Bills") -->
+      <!-- ========================================== -->
+      <VCol cols="12" md="5" lg="4" class="pos-cart-col pa-3 d-flex flex-column h-100">
+        <div class="cart-receipt-card h-100 d-flex flex-column bg-surface rounded-xl border shadow-sm">
+          
+          <!-- CABECERA DEL CARRITO -->
+          <div class="cart-receipt-header px-4 py-3 bg-primary text-white d-flex justify-space-between align-center rounded-t-xl">
+            <div class="d-flex align-center">
+              <VIcon icon="ri-receipt-line" size="22" class="me-2" />
+              <span class="text-subtitle-1 font-weight-bold text-white">Venta Actual</span>
+            </div>
+            
+            <div class="d-flex align-center gap-2">
+              <VChip color="white" text-color="primary" size="small" class="font-weight-black">
+                {{ cart.length }} ítems
+              </VChip>
+              
+              <IconBtn 
+                v-if="cart.length > 0" 
+                size="small" 
+                color="white" 
+                variant="text" 
+                title="Vaciar carrito"
+                @click="clearCart"
+              >
+                <VIcon icon="ri-delete-bin-line" size="18" />
+              </IconBtn>
+            </div>
           </div>
 
-          <!-- Advertencia de Facturación Retroactiva -->
-          <VAlert
-            v-if="!isToday && isInvoice"
-            type="warning"
-            density="compact"
-            variant="tonal"
-            class="mb-3 text-caption py-1 px-2"
-            border="start"
-          >
-            Impuestos Nacionales no permite emitir facturas con fechas pasadas. Por favor desactive "Emitir Factura" para guardar como nota de venta.
-          </VAlert>
-
-          <div class="d-flex align-center justify-space-between mb-3">
-             <span class="text-subtitle-2 font-weight-bold">DATOS FISCALES</span>
-             <VSwitch v-model="isInvoice" label="Emitir Factura" color="primary" density="compact" hide-details />
+          <!-- AVISO DE CAJA CERRADA -->
+          <div v-if="!isLoadingSession && !hasOpenSession" class="pa-3 bg-error-lighten-5 border-b text-center">
+            <VIcon icon="ri-lock-line" size="28" color="error" class="mb-1" />
+            <div class="text-caption font-weight-bold text-error">Caja Cerrada</div>
+            <VBtn color="error" size="x-small" block class="mt-1 font-weight-bold" @click="openCashDialog">
+              Aperturar Turno
+            </VBtn>
           </div>
 
-          <VRow v-if="isInvoice" no-gutters class="gap-2 mb-2">
-            <VCol cols="12" class="mb-2 d-flex align-center gap-2">
+          <!-- LISTA DE ÍTEMS EN EL CARRITO -->
+          <div class="cart-items-scroll flex-grow-1 overflow-y-auto pa-3">
+            <div v-if="cart.length === 0" class="cart-empty-box">
+              <VIcon icon="ri-shopping-cart-2-line" size="48" class="text-disabled mb-2" />
+              <div class="text-body-2 font-weight-medium text-medium-emphasis">El carrito está vacío</div>
+              <span class="text-caption text-disabled">Seleccione medicamentos del catálogo</span>
+            </div>
+
+            <div v-else class="cart-items-list">
+              <div 
+                v-for="(item, index) in cart" 
+                :key="item.id" 
+                class="cart-row-card mb-2 pa-2 rounded-lg border bg-surface d-flex align-center justify-space-between"
+              >
+                <div class="cart-item-desc flex-grow-1 pe-2">
+                  <div class="cart-item-name">{{ item.name }}</div>
+                  <div class="cart-item-unit-price">
+                    Bs. {{ Number(item.sale_price || 0).toFixed(2) }}
+                  </div>
+                </div>
+
+                <!-- Control de Cantidad (+ / -) -->
+                <div class="cart-item-stepper d-flex align-center gap-1">
+                  <button class="stepper-btn" @click="updateQuantity(item, -1)">
+                    <VIcon icon="ri-subtract-line" size="14" />
+                  </button>
+                  <span class="stepper-val">{{ item.quantity }}</span>
+                  <button class="stepper-btn" @click="updateQuantity(item, 1)">
+                    <VIcon icon="ri-add-line" size="14" />
+                  </button>
+                </div>
+
+                <!-- Subtotal y Eliminar -->
+                <div class="cart-item-subtotal text-end ps-2">
+                  <div class="subtotal-val">Bs. {{ (item.quantity * Number(item.sale_price || 0)).toFixed(2) }}</div>
+                  <button class="btn-remove-row" @click="removeItem(index)" title="Quitar">
+                    <VIcon icon="ri-close-circle-line" size="16" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <VDivider />
+
+          <!-- SECCIÓN DE FACTURACIÓN Y CLIENTE (COMPACTA) -->
+          <div class="cart-customer-section px-3 py-2 bg-grey-lighten-5">
+            <!-- Toggle Factura / Recibo -->
+            <div class="d-flex align-center justify-space-between mb-2">
+              <div class="d-flex align-center">
+                <VIcon :icon="isInvoice ? 'ri-file-text-line' : 'ri-receipt-line'" size="18" class="me-1 text-primary" />
+                <span class="text-caption font-weight-bold">{{ isInvoice ? 'Factura SIAT' : 'Nota de Venta' }}</span>
+              </div>
+              <VSwitch 
+                v-model="isInvoice" 
+                color="primary" 
+                density="compact" 
+                hide-details 
+                inset
+              />
+            </div>
+
+            <!-- Cliente y Datos Fiscales -->
+            <div class="d-flex align-center gap-2 mb-2">
               <VAutocomplete
                 v-model="selectedCustomer"
                 :items="customers"
                 item-title="first_name"
                 item-value="id"
-                label="Seleccionar Cliente"
+                placeholder="Cliente (Opcional)"
                 density="compact"
                 variant="outlined"
                 hide-details
-                prepend-inner-icon="ri-user-search-line"
-                class="flex-grow-1"
+                prepend-inner-icon="ri-user-line"
+                class="flex-grow-1 compact-input"
+              >
+                <template #item="{ props, item }">
+                  <VListItem 
+                    v-bind="props" 
+                    :title="`${item.raw.first_name || ''} ${item.raw.last_name || ''}`"
+                    :subtitle="`NIT/CI: ${item.raw.document_number || 'S/N'}`"
+                  />
+                </template>
+              </VAutocomplete>
+
+              <VBtn 
+                icon="ri-user-add-line" 
+                size="small" 
+                color="primary" 
+                variant="tonal" 
+                title="Nuevo Cliente"
+                @click="isAddClientDialog = true"
               />
-              <VBtn icon="ri-user-add-line" color="info" variant="tonal" density="compact" rounded @click="isAddClientDialog = true" title="Nuevo Cliente"/>
-            </VCol>
-            
-            <VCol cols="12" class="mb-2">
-              <VTextField v-model="businessName" label="Razón Social" density="compact" variant="outlined" hide-details />
-            </VCol>
-            <VCol cols="12">
-              <VTextField v-model="nitCi" label="NIT / CI" density="compact" variant="outlined" hide-details />
-            </VCol>
-          </VRow>
+            </div>
 
-          <VSelect
-            v-model="paymentMethod"
-            :items="[
-              { title: 'Efectivo', value: 1 },
-              { title: 'Tarjeta Debito/Crédito', value: 2 },
-              { title: 'QR / Transferencia', value: 7 }
-            ]"
-            label="Método de Pago"
-            density="compact"
-            variant="outlined"
-            hide-details
-            class="mt-2"
-          />
-        </div>
-
-        <VDivider />
-
-        <!-- TOTALES Y PAGO -->
-        <div class="pa-4 bg-surface rounded-b-xl">
-          <div class="d-flex justify-space-between mb-1 text-subtitle-1">
-            <span>Subtotal:</span>
-            <span>Bs. {{ subtotal.toFixed(2) }}</span>
-          </div>
-          <div class="d-flex justify-space-between mb-4 text-h5 font-weight-black text-primary border-t pt-2 mt-2">
-            <span>TOTAL:</span>
-            <span>Bs. {{ total.toFixed(2) }}</span>
+            <!-- Si es Factura: Razón Social y NIT -->
+            <div v-if="isInvoice" class="fiscal-inputs-box">
+              <VRow no-gutters class="gap-1 mb-1">
+                <VCol>
+                  <VTextField 
+                    v-model="businessName" 
+                    placeholder="Razón Social" 
+                    density="compact" 
+                    variant="outlined" 
+                    hide-details 
+                    class="compact-input"
+                  />
+                </VCol>
+                <VCol cols="5">
+                  <VTextField 
+                    v-model="nitCi" 
+                    placeholder="NIT / CI" 
+                    density="compact" 
+                    variant="outlined" 
+                    hide-details 
+                    class="compact-input"
+                  />
+                </VCol>
+              </VRow>
+            </div>
           </div>
 
-          <VRow no-gutters class="gap-2 mb-4">
-            <VCol>
-              <VTextField v-model.number="cashTendered" type="number" label="Paga con" density="compact" variant="outlined" hide-details prefix="Bs." bg-color="white"/>
-            </VCol>
-            <VCol>
-              <VTextField :value="change.toFixed(2)" label="Cambio" readonly density="compact" variant="outlined" hide-details prefix="Bs." :class="{'text-success font-weight-bold': change > 0}"/>
-            </VCol>
-          </VRow>
+          <VDivider />
 
-          <VBtn block color="success" size="x-large" elevation="8" class="font-weight-bold text-uppercase rounded-lg" @click="checkout" :disabled="cart.length === 0 || isFetching || !hasOpenSession" :loading="isFetching">
-            <VIcon icon="ri-checkbox-circle-line" class="mr-2"/> Procesar Venta
-          </VBtn>
-        </div>
-      </VCard>
-    </VCol>
-
-    <!-- GRILLA DE PRODUCTOS (DERECHA) -->
-    <VCol cols="12" md="8" lg="9" class="pa-2 h-100 d-flex flex-column">
-      <div class="pa-4 bg-white rounded-xl border mb-4 shadow-sm">
-        <VRow class="align-center">
-          <VCol cols="12" md="6" class="py-1">
-            <VTextField
-              v-model="searchQuery"
-              prepend-inner-icon="ri-search-line"
-              placeholder="Buscar por medicamento o barras..."
-              variant="outlined"
-              density="comfortable"
-              hide-details
-              clearable
-              autofocus
-              color="primary"
-              class="rounded-lg"
-            />
-          </VCol>
-          <VCol cols="12" md="6" class="py-1">
-            <VChipGroup v-model="categoryFilter" selected-class="bg-primary text-white" mandatory>
-               <VChip value="" variant="outlined" class="rounded-pill">Todos</VChip>
-               <VChip v-for="cat in categories" :key="cat" :value="cat" variant="outlined" class="rounded-pill">{{ cat }}</VChip>
-            </VChipGroup>
-          </VCol>
-        </VRow>
-      </div>
-
-      <div class="product-grid flex-grow-1 overflow-y-auto px-1">
-        <VRow v-if="!isFetching">
-          <VCol v-for="item in filteredProducts" :key="item.id" cols="12" sm="6" md="4" lg="3" xl="2">
-            <VCard 
-              @click="addToCart(item)" 
-              hover 
-              class="h-100 d-flex flex-column product-card rounded-lg border" 
-              :class="{'out-of-stock': item.stock <= 0, 'is-expired': item.is_expired}"
-            >
-              <div class="card-image-wrapper">
-                <VImg 
-                  :src="item.image_path ? `/storage/${item.image_path}` : 'https://placehold.co/400x300/E8F5E9/4CAF50?text='+item.name.substring(0,5)" 
-                  height="140" 
-                  cover
-                  class="bg-grey-lighten-4 rounded-t-lg"
-                />
-                
-                <!-- Stock indicator overlay on image for clear visual hierarchy -->
-                <VChip 
-                  v-if="item.stock > 0"
-                  size="x-small" 
-                  :color="item.is_expired ? 'error' : (item.stock > 10 ? 'success' : 'warning')" 
-                  class="stock-badge-overlay font-weight-black text-white" 
-                  variant="flat"
-                  elevation="2"
-                >
-                  Stock: {{ item.stock }}
-                </VChip>
- 
-                <!-- Out of Stock Overlay -->
-                <div v-if="item.stock <= 0" class="inset-0 bg-black bg-opacity-40 d-flex align-center justify-center rounded-t-lg">
-                  <VChip color="error" class="font-weight-black px-3" variant="flat" size="small">
-                    AGOTADO
-                  </VChip>
-                </div>
-
-                <!-- Expired Overlay -->
-                <div v-else-if="item.is_expired" class="inset-0 bg-black bg-opacity-40 d-flex align-center justify-center rounded-t-lg">
-                  <VChip color="error" class="font-weight-black px-3" variant="flat" size="small">
-                    VENCIDO
-                  </VChip>
-                </div>
+          <!-- MÉTODOS DE PAGO (TILES ESTILO FIGMA) -->
+          <div class="px-3 pt-2 pb-1 bg-surface">
+            <div class="text-caption font-weight-bold text-medium-emphasis mb-1">Método de Pago</div>
+            <div class="payment-tiles-grid d-flex gap-2">
+              <div 
+                v-for="pm in paymentMethodsList" 
+                :key="pm.value"
+                class="payment-tile"
+                :class="{ active: paymentMethod === pm.value }"
+                @click="paymentMethod = pm.value"
+              >
+                <VIcon :icon="pm.icon" size="18" class="mb-1" />
+                <span class="payment-tile-text">{{ pm.title }}</span>
               </div>
-              
-              <VCardItem class="pb-0 pt-3 flex-grow-1">
-                <div class="d-flex justify-space-between align-center mb-1">
-                  <!-- Laboratory: styled in a beautiful emerald teal to stand out -->
-                  <span class="product-lab text-uppercase">{{ item.laboratory?.name || 'Genérico' }}</span>
-                </div>
-                <VCardTitle class="text-body-1 font-weight-bold text-wrap line-clamp-2" style="line-height:1.2; min-height:2.4em;">{{ item.name }}</VCardTitle>
-              </VCardItem>
+            </div>
+          </div>
 
-              <VCardActions class="pa-3 pt-0 d-flex justify-space-between align-center">
-                <span class="text-h6 font-weight-black text-success">Bs. {{ Number(item.sale_price).toFixed(2) }}</span>
-                <VIcon icon="ri-add-circle-fill" color="primary" size="28" class="add-icon" />
-              </VCardActions>
-            </VCard>
-          </VCol>
-        </VRow>
-        
-        <div v-else class="h-100 d-flex align-center justify-center">
-          <VProgressCircular indeterminate color="primary" size="64" />
+          <!-- TOTALES Y PAGO EN EFECTIVO -->
+          <div class="cart-footer-box pa-3 bg-surface border-t">
+            <div class="d-flex justify-space-between align-center mb-1">
+              <span class="text-caption text-medium-emphasis">Subtotal:</span>
+              <span class="text-body-2 font-weight-bold">Bs. {{ subtotal.toFixed(2) }}</span>
+            </div>
+
+            <div class="d-flex justify-space-between align-center mb-2">
+              <span class="text-subtitle-1 font-weight-black text-primary">TOTAL:</span>
+              <span class="text-h5 font-weight-black text-primary">Bs. {{ total.toFixed(2) }}</span>
+            </div>
+
+            <!-- Efectivo: Paga Con / Cambio -->
+            <div v-if="paymentMethod === 1" class="d-flex gap-2 mb-3">
+              <VTextField 
+                v-model.number="cashTendered" 
+                type="number" 
+                label="Paga con" 
+                density="compact" 
+                variant="outlined" 
+                hide-details 
+                prefix="Bs." 
+                class="compact-input"
+              />
+              <VTextField 
+                :value="change.toFixed(2)" 
+                label="Cambio" 
+                readonly 
+                density="compact" 
+                variant="outlined" 
+                hide-details 
+                prefix="Bs." 
+                class="compact-input text-success font-weight-bold"
+              />
+            </div>
+
+            <!-- BOTÓN PROCESAR VENTA -->
+            <VBtn 
+              block 
+              color="success" 
+              size="large" 
+              elevation="4" 
+              class="btn-checkout font-weight-bold text-white rounded-xl"
+              :disabled="cart.length === 0 || isFetching || !hasOpenSession" 
+              :loading="isFetching"
+              @click="checkout"
+            >
+              <VIcon start icon="ri-checkbox-circle-line" size="20" />
+              <span>Cobrar Bs. {{ total.toFixed(2) }}</span>
+            </VBtn>
+          </div>
         </div>
-      </div>
-    </VCol>
+      </VCol>
+    </VRow>
 
-    <!-- MODALES -->
+    <!-- MODAL CLIENTE NUEVO -->
     <ClienteAddDialog v-model:isDialogVisible="isAddClientDialog" @addCliente="fetchCustomers" />
 
     <!-- MODAL APERTURA DE CAJA RÁPIDA -->
-    <VDialog v-model="isOpenCashDialog" max-width="400">
+    <VDialog v-model="isOpenCashDialog" max-width="420">
       <VCard class="rounded-xl">
         <DialogCloseBtn variant="text" size="default" @click="isOpenCashDialog = false" />
         <VCardTitle class="pa-4 bg-primary text-white d-flex align-center font-weight-bold">
           <VIcon icon="ri-safe-2-line" class="me-2" />
           Aperturar Turno de Caja
         </VCardTitle>
-        <VCardText class="pt-6">
+        <VCardText class="pt-5 pb-3">
           <VSelect
             v-model="openCashData.cash_register_id"
             :items="cashRegistersList"
@@ -501,7 +669,7 @@ watch(searchQuery, (newVal) => {
             label="Seleccionar Caja Física"
             variant="outlined"
             density="comfortable"
-            class="mb-4"
+            class="mb-3"
           />
           <VTextField
             v-model.number="openCashData.opening_amount"
@@ -510,7 +678,7 @@ watch(searchQuery, (newVal) => {
             min="0"
             variant="outlined"
             density="comfortable"
-            prefix="Bs"
+            prefix="Bs."
           />
         </VCardText>
         <VCardActions class="px-4 pb-4">
@@ -524,123 +692,388 @@ watch(searchQuery, (newVal) => {
     </VDialog>
 
     <!-- MODAL DE RESULTADO DE VENTA / FACTURA -->
-    <VDialog v-model="isResultDialog" max-width="500" persistent>
+    <VDialog v-model="isResultDialog" max-width="480" persistent>
       <VCard v-if="saleResult" class="pa-4 text-center rounded-xl">
-        <VCardTitle>
-          <VIcon icon="ri-checkbox-circle-line" color="success" size="64" class="mb-4"/>
-          <div class="text-h4 font-weight-bold">Venta Exitosa</div>
+        <VCardTitle class="pt-2">
+          <VIcon icon="ri-checkbox-circle-line" color="success" size="56" class="mb-2"/>
+          <div class="text-h5 font-weight-bold">¡Venta Exitosa!</div>
         </VCardTitle>
-        <VCardText>
-          <p class="mb-4">Se ha generado el comprobante correctamente.</p>
+        <VCardText class="pb-2">
+          <p class="text-body-2 text-medium-emphasis mb-3">El comprobante ha sido registrado correctamente.</p>
           
-          <div v-if="saleResult.cuf" class="bg-primary-lighten-5 pa-4 rounded-lg border border-primary border-dashed mb-6">
+          <div v-if="saleResult.cuf" class="bg-primary-lighten-5 pa-3 rounded-lg border border-primary border-dashed mb-4 text-start">
             <div class="text-caption text-uppercase font-weight-bold text-primary mb-1">CÓDIGO CUF (SIAT)</div>
-            <div class="text-body-2 font-weight-black text-break">{{ saleResult.cuf }}</div>
+            <div class="text-caption font-weight-bold text-break text-high-emphasis font-mono">{{ saleResult.cuf }}</div>
           </div>
 
-          <VRow class="gap-2">
+          <VRow class="gap-2" no-gutters>
             <template v-if="saleResult.cuf">
-              <VCol cols="12" sm="6" class="pb-0">
+              <VCol cols="12" sm="6" class="pa-1">
                  <VBtn :href="`/api/v1/sales/${saleResult.id}/print/thermal`" target="_blank" block color="secondary" size="large" prepend-icon="ri-receipt-line">
-                   Ticket Térmico
+                   Ticket 80mm
                  </VBtn>
               </VCol>
-              <VCol cols="12" sm="6" class="pb-0">
+              <VCol cols="12" sm="6" class="pa-1">
                  <VBtn :href="`/api/v1/sales/${saleResult.id}/print/letter`" target="_blank" block color="primary" size="large" prepend-icon="ri-file-text-line">
                    Factura Carta
                  </VBtn>
               </VCol>
             </template>
-            <!-- Receipt if not invoice -->
-            <VCol v-else cols="12" class="pb-0">
+            <VCol v-else cols="12" class="pa-1">
                  <VBtn :href="`/api/v1/sales/${saleResult.id}/print/thermal`" target="_blank" block color="secondary" size="large" prepend-icon="ri-receipt-line">
                    Imprimir Recibo
                  </VBtn>
             </VCol>
-            <VCol cols="12">
-               <VBtn block variant="tonal" size="large" @click="isResultDialog = false">Nueva Venta</VBtn>
+            <VCol cols="12" class="pa-1 mt-2">
+               <VBtn block variant="tonal" size="large" class="font-weight-bold" @click="isResultDialog = false">
+                 Nueva Venta
+               </VBtn>
             </VCol>
           </VRow>
         </VCardText>
       </VCard>
     </VDialog>
-  </VRow>
+  </div>
 </template>
 
 <style scoped>
-.pos-layout {
-  height: calc(100vh - 84px);
-  background-color: #f4f7f6;
+.pos-wrapper {
+  height: calc(100vh - 80px);
+  overflow: hidden;
+  background-color: #f4f6f8;
 }
-.cart-list::-webkit-scrollbar,
-.product-grid::-webkit-scrollbar {
-  width: 4px;
+
+.pos-main-row {
+  height: 100%;
 }
-.cart-list::-webkit-scrollbar-thumb,
-.product-grid::-webkit-scrollbar-thumb {
-  background-color: #ddd;
-  border-radius: 10px;
-}
-.product-card {
-  transition: all 0.3s ease;
-  position: relative;
-}
-.product-card:hover:not(.out-of-stock):not(.is-expired) {
-  transform: translateY(-5px);
-  box-shadow: 0 12px 20px rgba(0,0,0,0.1) !important;
-}
-.product-card.out-of-stock {
-  border: 1px dashed rgba(255, 77, 73, 0.4) !important;
-  background-color: #fffafb !important;
-  cursor: not-allowed;
-}
-.product-card.out-of-stock .v-img {
-  filter: grayscale(1) opacity(0.6);
-}
-.product-card.is-expired {
-  border: 1px dashed rgba(255, 77, 73, 0.6) !important;
-  background-color: #fffafb !important;
-  cursor: not-allowed;
-}
-.product-card.is-expired .v-img {
-  filter: grayscale(0.5) opacity(0.7);
-}
-.product-lab {
-  color: #009688 !important; /* Elegant Emerald Teal */
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-.product-card:hover:not(.out-of-stock):not(.is-expired) .add-icon {
-  transform: scale(1.2);
-  color: #5c61e6 !important;
-}
-.add-icon {
-  transition: all 0.2s ease-in-out;
-}
-.card-image-wrapper {
-  position: relative;
-  width: 100%;
-  height: 140px;
+
+.pos-catalog-col {
+  height: 100%;
   overflow: hidden;
 }
-.stock-badge-overlay {
-  position: absolute !important;
-  top: 8px;
-  right: 8px;
-  z-index: 5;
+
+.pos-cart-col {
+  height: 100%;
+  overflow: hidden;
 }
-.inset-0 {
+
+/* Categories Pills Bar */
+.categories-scroll {
+  scrollbar-width: none;
+}
+.categories-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.category-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.category-pill:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.category-pill.active {
+  background: #5c61e6;
+  color: #ffffff;
+  border-color: #5c61e6;
+  box-shadow: 0 4px 10px rgba(92, 97, 230, 0.25);
+}
+
+/* Product Cards */
+.pos-product-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 8px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.pos-product-card:hover:not(.is-disabled) {
+  transform: translateY(-3px);
+  border-color: #5c61e6;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06);
+}
+
+.pos-product-card.is-in-cart {
+  border-color: #5c61e6;
+  background-color: #fafbff;
+}
+
+.pos-product-card.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
+.card-badge-top {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
 }
-.line-clamp-2 {
+
+.stock-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 10px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.stock-ok { background: #dcfce7; color: #15803d; }
+.stock-low { background: #fef9c3; color: #a16207; }
+.stock-out { background: #fee2e2; color: #b91c1c; }
+.stock-expired { background: #fee2e2; color: #b91c1c; }
+
+.product-img-box {
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.product-info-box {
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.product-lab-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #0d9488; /* Emerald Teal */
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.product-name {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.25;
+  margin: 2px 0 0 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: 2.1em;
+}
+
+.product-price {
+  font-size: 0.95rem;
+  font-weight: 900;
+  color: #16a34a;
+}
+
+.btn-add-item {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: #5c61e6;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-add-item:hover:not(:disabled) {
+  background: #474cc7;
+  transform: scale(1.1);
+}
+
+/* Cart / Bills Column (Right) */
+.cart-receipt-card {
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.cart-items-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.cart-items-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.cart-empty-box {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 10px;
+  opacity: 0.6;
+}
+
+.cart-row-card {
+  transition: all 0.15s ease;
+}
+
+.cart-item-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cart-item-unit-price {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.cart-item-stepper {
+  background: #f1f5f9;
+  border-radius: 20px;
+  padding: 2px 4px;
+}
+
+.stepper-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: white;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.stepper-val {
+  font-size: 0.78rem;
+  font-weight: 800;
+  min-width: 18px;
+  text-align: center;
+}
+
+.subtotal-val {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.btn-remove-row {
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.7;
+}
+.btn-remove-row:hover { opacity: 1; }
+
+/* Payment Tiles */
+.payment-tile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.payment-tile:hover {
+  border-color: #cbd5e1;
+}
+
+.payment-tile.active {
+  background: #eff2fe;
+  border-color: #5c61e6;
+  color: #5c61e6;
+}
+
+.payment-tile-text {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.compact-input :deep(.v-field__input) {
+  padding: 4px 8px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  font-size: 0.8rem !important;
+}
+
+.btn-checkout {
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .pos-wrapper {
+    background-color: #0f172a;
+  }
+  .category-pill {
+    background: #1e293b;
+    border-color: #334155;
+    color: #cbd5e1;
+  }
+  .pos-product-card {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  .product-name {
+    color: #f1f5f9;
+  }
+  .cart-receipt-card {
+    background: #1e293b;
+  }
+  .cart-row-card {
+    background: #0f172a;
+    border-color: #334155;
+  }
+  .cart-item-name {
+    color: #f1f5f9;
+  }
+  .subtotal-val {
+    color: #f1f5f9;
+  }
+  .payment-tile {
+    background: #0f172a;
+    border-color: #334155;
+    color: #94a3b8;
+  }
+  .payment-tile.active {
+    background: #1e1b4b;
+    border-color: #6366f1;
+    color: #818cf8;
+  }
 }
 </style>
