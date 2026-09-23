@@ -46,14 +46,12 @@ const openCashDialog = async () => {
 // ── ESTADO DEL POS ──
 const cart = ref([])
 const searchQuery = ref('')
-const categoryFilter = ref('')
 const cashTendered = ref(0)
 const discount = ref(0)
 const saleDate = ref(new Date().toISOString().slice(0, 10))
 
 // Datos
 const products = ref([])
-const categories = ref([])
 const customers = ref([])
 const selectedCustomer = ref(null)
 const isFetching = ref(false)
@@ -87,7 +85,7 @@ const saleResult = ref(null)
 
 // Métodos de Pago visuales
 const paymentMethodsList = [
-  { value: 1, title: 'Efectivo', icon: 'ri-money-dollar-circle-line', desc: 'Pago en billetes/monedas' },
+  { value: 1, title: 'Efectivo', icon: 'ri-money-dollar-circle-line', desc: 'Billetes / Monedas' },
   { value: 2, title: 'Tarjeta', icon: 'ri-bank-card-line', desc: 'Débito / Crédito' },
   { value: 7, title: 'QR / Transfer.', icon: 'ri-qr-code-line', desc: 'Transferencia bancaria' }
 ]
@@ -102,12 +100,6 @@ const fetchProducts = async (search = '') => {
     isFetching.value = true
     const response = await $api(`/v1/products?per_page=100&search=${encodeURIComponent(search)}`)
     products.value = response.data || response || []
-    
-    if (!search && categories.value.length === 0) {
-      const cats = new Set()
-      products.value.forEach(p => { if (p.category?.name) cats.add(p.category.name) })
-      categories.value = Array.from(cats)
-    }
   } catch (error) {
     console.error('Error fetching products:', error)
   } finally {
@@ -124,6 +116,19 @@ const fetchCustomers = async () => {
   }
 }
 
+const handleCustomerSaved = async (newCustomerData) => {
+  await fetchCustomers()
+  if (newCustomerData && newCustomerData.id) {
+    selectedCustomer.value = newCustomerData.id
+  } else if (customers.value.length > 0) {
+    // Seleccionar el último cliente agregado
+    const lastCustomer = customers.value[customers.value.length - 1]
+    if (lastCustomer) {
+      selectedCustomer.value = lastCustomer.id
+    }
+  }
+}
+
 // ── LÓGICA DE NEGOCIO ──
 
 const filteredProducts = computed(() => {
@@ -131,9 +136,7 @@ const filteredProducts = computed(() => {
   return products.value.filter(p => {
     const name = (p.name || '').toLowerCase()
     const barcode = (p.barcode || '').toLowerCase()
-    const matchesSearch = name.includes(query) || barcode.includes(query)
-    const matchesCategory = categoryFilter.value ? (p.category && p.category.name === categoryFilter.value) : true
-    return matchesSearch && matchesCategory
+    return name.includes(query) || barcode.includes(query)
   })
 })
 
@@ -166,7 +169,7 @@ watch(selectedCustomer, (newVal) => {
       nitCi.value = customer.document_number || '0'
       complement.value = customer.complement || ''
       customerEmail.value = customer.email || ''
-      documentType.value = customer.document_type || (customer.document_number?.length > 8 ? 5 : 1)
+      documentType.value = customer.document_type || (String(customer.document_number || '').length >= 9 ? 5 : 1)
     }
   } else {
     businessName.value = 'CONTROL TRIBUTARIO'
@@ -177,7 +180,7 @@ watch(selectedCustomer, (newVal) => {
   }
 })
 
-// Si el NIT/CI cambia a longitud grande, sugerir NIT
+// Auto-detectar NIT si tiene 9 o más dígitos
 watch(nitCi, (newVal) => {
   if (newVal && String(newVal).length >= 9 && documentType.value === 1) {
     documentType.value = 5 // NIT
@@ -266,16 +269,16 @@ const checkout = async () => {
 
   const payload = {
     customer_id: selectedCustomer.value,
-    business_name: businessName.value || 'CONTROL TRIBUTARIO',
-    nit_ci: nitCi.value || '0',
-    complement: complement.value || null,
-    customer_email: customerEmail.value || null,
+    business_name: isInvoice.value ? (businessName.value || 'CONTROL TRIBUTARIO') : 'VENTA LOCAL',
+    nit_ci: isInvoice.value ? (nitCi.value || '0') : '0',
+    complement: isInvoice.value ? (complement.value || null) : null,
+    customer_email: isInvoice.value ? (customerEmail.value || null) : null,
     sale_date: saleDate.value,
     total_amount: total.value,
     cash_tendered: paymentMethod.value === 1 ? (cashTendered.value || total.value) : total.value,
     change: paymentMethod.value === 1 ? change.value : 0,
     payment_method_code: paymentMethod.value,
-    document_type_code: documentType.value,
+    document_type_code: isInvoice.value ? documentType.value : 1,
     card_number: paymentMethod.value === 2 ? cardNumber.value : null,
     discount_amount: Number(discount.value || 0),
     is_invoice: isInvoice.value,
@@ -351,12 +354,12 @@ watch(searchQuery, (newVal) => {
       <!-- ======================================================= -->
       <VCol cols="12" md="7" lg="7" xl="7" class="pos-catalog-col pa-2 pa-sm-3 d-flex flex-column">
         
-        <!-- BUSCADOR SUPERIOR -->
-        <div class="catalog-header-bar pa-2 pa-sm-3 bg-surface rounded-xl border mb-2 shadow-xs d-flex align-center gap-2">
+        <!-- BUSCADOR SUPERIOR DIRECTO Y LIMPIO -->
+        <div class="catalog-header-bar pa-2 pa-sm-3 bg-surface rounded-xl border mb-3 shadow-xs d-flex align-center gap-2">
           <VTextField
             v-model="searchQuery"
             prepend-inner-icon="ri-search-line"
-            placeholder="Buscar por medicamento, principio activo o código de barras (Enter para agregar)..."
+            placeholder="Buscar medicamento, principio activo o escanear código de barras..."
             variant="outlined"
             density="compact"
             hide-details
@@ -385,31 +388,6 @@ watch(searchQuery, (newVal) => {
           >
             <VIcon start icon="ri-lock-line" size="16" /> Abrir Caja
           </VBtn>
-        </div>
-
-        <!-- CATEGORÍAS RÁPIDAS -->
-        <div class="categories-bar mb-2">
-          <div class="d-flex align-center gap-2 overflow-x-auto py-1 categories-scroll">
-            <button
-              class="category-pill"
-              :class="{ active: categoryFilter === '' }"
-              @click="categoryFilter = ''"
-            >
-              <VIcon icon="ri-apps-2-line" size="16" class="me-1" />
-              <span>Todos</span>
-            </button>
-
-            <button
-              v-for="cat in categories"
-              :key="cat"
-              class="category-pill"
-              :class="{ active: categoryFilter === cat }"
-              @click="categoryFilter = cat"
-            >
-              <VIcon icon="ri-capsule-line" size="16" class="me-1" />
-              <span>{{ cat }}</span>
-            </button>
-          </div>
         </div>
 
         <!-- GRILLA DE PRODUCTOS -->
@@ -483,7 +461,7 @@ watch(searchQuery, (newVal) => {
           <div v-else-if="!isFetching && filteredProducts.length === 0" class="empty-state-box">
             <VIcon icon="ri-inbox-line" size="48" class="text-disabled mb-1" />
             <div class="text-body-1 font-weight-bold text-medium-emphasis">No se encontraron medicamentos</div>
-            <p class="text-caption text-disabled">Intente con otra búsqueda o categoría.</p>
+            <p class="text-caption text-disabled">Intente con otro término de búsqueda.</p>
           </div>
 
           <div v-else class="h-100 d-flex align-center justify-center py-10">
@@ -523,24 +501,50 @@ watch(searchQuery, (newVal) => {
             </div>
           </div>
 
-          <!-- 2. CLIENTE ASIGNADO (BARRA RÁPIDA SUPERIOR DISCRETA) -->
-          <div class="client-quick-bar px-3 py-1 bg-grey-lighten-4 border-b d-flex justify-space-between align-center">
-            <div class="d-flex align-center text-truncate pe-2">
-              <VIcon icon="ri-user-smile-line" size="16" class="me-1 text-primary" />
-              <span class="text-caption font-weight-bold text-high-emphasis text-truncate">
-                {{ businessName }} ({{ nitCi }})
-              </span>
+          <!-- 2. SELECTOR DE CLIENTE CON AUTOCOMPLETE LIVE-SEARCH Y BOTÓN CREAR -->
+          <div class="client-select-bar px-3 py-2 bg-grey-lighten-4 border-b">
+            <div class="d-flex align-center gap-2">
+              <VAutocomplete
+                v-model="selectedCustomer"
+                :items="customers"
+                item-title="first_name"
+                item-value="id"
+                placeholder="Buscar Cliente (Nombre / NIT / CI)..."
+                density="compact"
+                variant="outlined"
+                hide-details
+                clearable
+                prepend-inner-icon="ri-user-search-line"
+                class="flex-grow-1 customer-autocomplete-input"
+              >
+                <template #selection="{ item }">
+                  <div class="d-flex align-center text-truncate font-weight-bold text-caption text-primary">
+                    {{ item.raw.first_name || '' }} {{ item.raw.last_name || '' }}
+                    <span class="text-medium-emphasis ms-1 font-weight-regular">({{ item.raw.document_number || 'S/N' }})</span>
+                  </div>
+                </template>
+
+                <template #item="{ props, item }">
+                  <VListItem 
+                    v-bind="props" 
+                    :title="`${item.raw.first_name || ''} ${item.raw.last_name || ''}`"
+                    :subtitle="`NIT/CI: ${item.raw.document_number || 'S/N'} | Tel: ${item.raw.phone || 'S/N'}`"
+                  />
+                </template>
+              </VAutocomplete>
+
+              <VBtn 
+                color="primary"
+                variant="flat"
+                size="small"
+                class="font-weight-bold px-3"
+                title="Registrar Nuevo Cliente"
+                @click="isAddClientDialog = true"
+              >
+                <VIcon start icon="ri-user-add-line" size="16" />
+                <span>Nuevo</span>
+              </VBtn>
             </div>
-            
-            <VBtn 
-              size="x-small" 
-              variant="tonal" 
-              color="primary" 
-              class="font-weight-bold px-2 text-none"
-              @click="isAddClientDialog = true"
-            >
-              + Cliente
-            </VBtn>
           </div>
 
           <!-- 3. LISTA DE PRODUCTOS DEL CARRITO (ESPACIO MÁXIMO VERTICAL) -->
@@ -787,75 +791,82 @@ watch(searchQuery, (newVal) => {
             <div class="d-flex align-center justify-space-between mb-2">
               <div class="d-flex align-center">
                 <VIcon :icon="isInvoice ? 'ri-file-text-line' : 'ri-receipt-line'" size="18" class="me-1 text-primary" />
-                <span class="text-subtitle-2 font-weight-bold">{{ isInvoice ? 'Emitir Factura Oficial SIAT' : 'Guardar como Recibo / Nota de Venta' }}</span>
+                <span class="text-subtitle-2 font-weight-bold">{{ isInvoice ? 'Emitir Factura Oficial SIAT' : 'Guardar como Recibo / Nota de Venta (No Facturado)' }}</span>
               </div>
               <VSwitch v-model="isInvoice" color="primary" density="compact" hide-details inset />
             </div>
 
-            <!-- Campos Fiscales SIAT -->
-            <VRow density="compact" class="mt-1">
-              <!-- Tipo de Documento -->
-              <VCol cols="12" sm="6">
-                <VSelect 
-                  v-model="documentType" 
-                  :items="documentTypesList"
-                  item-title="title"
-                  item-value="value"
-                  label="Tipo de Documento Identidad *"
-                  variant="outlined" 
-                  density="compact" 
-                  hide-details
-                />
-              </VCol>
+            <!-- Campos Fiscales SIAT (Habilitados si es Factura, Deshabilitados si es Recibo) -->
+            <div :class="{ 'opacity-50 pointer-events-none': !isInvoice }">
+              <VRow density="compact" class="mt-1">
+                <!-- Tipo de Documento -->
+                <VCol cols="12" sm="6">
+                  <VSelect 
+                    v-model="documentType" 
+                    :items="documentTypesList"
+                    item-title="title"
+                    item-value="value"
+                    label="Tipo de Documento Identidad *"
+                    variant="outlined" 
+                    density="compact" 
+                    :disabled="!isInvoice"
+                    hide-details
+                  />
+                </VCol>
 
-              <!-- NIT / CI -->
-              <VCol cols="12" sm="4">
-                <VTextField 
-                  v-model="nitCi" 
-                  label="NIT / CI *" 
-                  variant="outlined" 
-                  density="compact" 
-                  hide-details
-                />
-              </VCol>
+                <!-- NIT / CI -->
+                <VCol cols="12" sm="4">
+                  <VTextField 
+                    v-model="nitCi" 
+                    label="NIT / CI *" 
+                    variant="outlined" 
+                    density="compact" 
+                    :disabled="!isInvoice"
+                    hide-details
+                  />
+                </VCol>
 
-              <!-- Complemento -->
-              <VCol cols="12" sm="2">
-                <VTextField 
-                  v-model="complement" 
-                  label="Compl." 
-                  placeholder="1A"
-                  variant="outlined" 
-                  density="compact" 
-                  hide-details
-                />
-              </VCol>
+                <!-- Complemento -->
+                <VCol cols="12" sm="2">
+                  <VTextField 
+                    v-model="complement" 
+                    label="Compl." 
+                    placeholder="1A"
+                    variant="outlined" 
+                    density="compact" 
+                    :disabled="!isInvoice"
+                    hide-details
+                  />
+                </VCol>
 
-              <!-- Razón Social -->
-              <VCol cols="12" sm="6">
-                <VTextField 
-                  v-model="businessName" 
-                  label="Razón Social / Nombre *" 
-                  variant="outlined" 
-                  density="compact" 
-                  hide-details
-                />
-              </VCol>
+                <!-- Razón Social -->
+                <VCol cols="12" sm="6">
+                  <VTextField 
+                    v-model="businessName" 
+                    label="Razón Social / Nombre *" 
+                    variant="outlined" 
+                    density="compact" 
+                    :disabled="!isInvoice"
+                    hide-details
+                  />
+                </VCol>
 
-              <!-- Correo Cliente (Para Envío Automático) -->
-              <VCol cols="12" sm="6">
-                <VTextField 
-                  v-model="customerEmail" 
-                  type="email"
-                  label="Correo Electrónico (Para XML/PDF)" 
-                  placeholder="cliente@correo.com"
-                  variant="outlined" 
-                  density="compact" 
-                  prepend-inner-icon="ri-mail-line"
-                  hide-details
-                />
-              </VCol>
-            </VRow>
+                <!-- Correo Cliente (Para Envío Automático) -->
+                <VCol cols="12" sm="6">
+                  <VTextField 
+                    v-model="customerEmail" 
+                    type="email"
+                    label="Correo Electrónico (Para XML/PDF)" 
+                    placeholder="cliente@correo.com"
+                    variant="outlined" 
+                    density="compact" 
+                    prepend-inner-icon="ri-mail-line"
+                    :disabled="!isInvoice"
+                    hide-details
+                  />
+                </VCol>
+              </VRow>
+            </div>
           </div>
         </VCardText>
 
@@ -875,14 +886,14 @@ watch(searchQuery, (newVal) => {
             @click="checkout"
           >
             <VIcon start icon="ri-checkbox-circle-line" />
-            <span>CONFIRMAR Y EMITIR FACTURA</span>
+            <span>{{ isInvoice ? 'CONFIRMAR Y EMITIR FACTURA' : 'CONFIRMAR NOTA DE VENTA' }}</span>
           </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
     <!-- MODAL CLIENTE NUEVO -->
-    <ClienteAddDialog v-model:isDialogVisible="isAddClientDialog" @addCliente="fetchCustomers" />
+    <ClienteAddDialog v-model:isDialogVisible="isAddClientDialog" @addCliente="handleCustomerSaved" />
 
     <!-- MODAL APERTURA DE CAJA -->
     <VDialog v-model="isOpenCashDialog" max-width="420">
@@ -923,42 +934,78 @@ watch(searchQuery, (newVal) => {
       </VCard>
     </VDialog>
 
-    <!-- MODAL DE RESULTADO DE VENTA / FACTURA -->
-    <VDialog v-model="isResultDialog" max-width="480" persistent>
+    <!-- MODAL DE RESULTADO POST-VENTA (IMPRESIÓN DIRECTA O ROLL/CARTA) -->
+    <VDialog v-model="isResultDialog" max-width="500" persistent>
       <VCard v-if="saleResult" class="pa-4 text-center rounded-xl">
         <VCardTitle class="pt-2">
           <VIcon icon="ri-checkbox-circle-line" color="success" size="56" class="mb-2"/>
-          <div class="text-h5 font-weight-bold">¡Venta Exitosa!</div>
+          <div class="text-h5 font-weight-bold">
+            {{ saleResult.cuf ? '¡Factura Emitida con Éxito!' : '¡Venta Registrada con Éxito!' }}
+          </div>
+          <div v-if="saleResult.invoice_number" class="text-subtitle-2 text-primary font-weight-bold">
+            Factura N° {{ saleResult.invoice_number }}
+          </div>
         </VCardTitle>
+        
         <VCardText class="pb-2">
-          <p class="text-body-2 text-medium-emphasis mb-3">El comprobante ha sido registrado correctamente.</p>
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            Seleccione el formato de impresión deseado para entregar al cliente:
+          </p>
           
           <div v-if="saleResult.cuf" class="bg-primary-lighten-5 pa-3 rounded-lg border border-primary border-dashed mb-4 text-start">
-            <div class="text-caption text-uppercase font-weight-bold text-primary mb-1">CÓDIGO CUF (SIAT)</div>
+            <div class="text-caption text-uppercase font-weight-bold text-primary mb-1">CÓDIGO CUF (SIAT PILOTO)</div>
             <div class="text-caption font-weight-bold text-break text-high-emphasis font-mono">{{ saleResult.cuf }}</div>
           </div>
 
           <VRow class="gap-2" no-gutters>
+            <!-- Si tiene Factura SIAT -->
             <template v-if="saleResult.cuf">
               <VCol cols="12" sm="6" class="pa-1">
-                 <VBtn :href="`/api/v1/sales/${saleResult.id}/print/thermal`" target="_blank" block color="secondary" size="large" prepend-icon="ri-receipt-line">
-                   Ticket 80mm
+                 <VBtn 
+                   :href="`/api/v1/sales/${saleResult.id}/print/thermal`" 
+                   target="_blank" 
+                   block 
+                   color="secondary" 
+                   size="large" 
+                   prepend-icon="ri-receipt-line"
+                   class="font-weight-bold"
+                 >
+                   Ticket 80mm (Rollo)
                  </VBtn>
               </VCol>
               <VCol cols="12" sm="6" class="pa-1">
-                 <VBtn :href="`/api/v1/sales/${saleResult.id}/print/letter`" target="_blank" block color="primary" size="large" prepend-icon="ri-file-text-line">
-                   Factura Carta
+                 <VBtn 
+                   :href="`/api/v1/sales/${saleResult.id}/print/letter`" 
+                   target="_blank" 
+                   block 
+                   color="primary" 
+                   size="large" 
+                   prepend-icon="ri-file-text-line"
+                   class="font-weight-bold"
+                 >
+                   Factura Carta (A4)
                  </VBtn>
               </VCol>
             </template>
+
+            <!-- Si es Recibo simple / Nota de Venta -->
             <VCol v-else cols="12" class="pa-1">
-                 <VBtn :href="`/api/v1/sales/${saleResult.id}/print/thermal`" target="_blank" block color="secondary" size="large" prepend-icon="ri-receipt-line">
-                   Imprimir Recibo
+                 <VBtn 
+                   :href="`/api/v1/sales/${saleResult.id}/print/thermal`" 
+                   target="_blank" 
+                   block 
+                   color="secondary" 
+                   size="large" 
+                   prepend-icon="ri-receipt-line"
+                   class="font-weight-bold"
+                 >
+                   Imprimir Recibo Térmico
                  </VBtn>
             </VCol>
+
             <VCol cols="12" class="pa-1 mt-2">
                <VBtn block variant="tonal" size="large" class="font-weight-bold" @click="isResultDialog = false">
-                 Nueva Venta
+                 <VIcon start icon="ri-add-line" /> Nueva Venta (Siguiente Cliente)
                </VBtn>
             </VCol>
           </VRow>
@@ -987,40 +1034,6 @@ watch(searchQuery, (newVal) => {
 .pos-cart-col {
   height: 100%;
   overflow: hidden;
-}
-
-/* Category Pills */
-.categories-scroll {
-  scrollbar-width: none;
-}
-.categories-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.category-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 5px 12px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 18px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #475569;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.category-pill:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-}
-
-.category-pill.active {
-  background: #5c61e6;
-  color: #ffffff;
-  border-color: #5c61e6;
 }
 
 /* Product Cards */
@@ -1330,6 +1343,10 @@ watch(searchQuery, (newVal) => {
 .change-ok { background: #dcfce7; border-color: #86efac; color: #15803d; }
 .change-err { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
 
+.pointer-events-none {
+  pointer-events: none;
+}
+
 /* Dark mode overrides */
 @media (prefers-color-scheme: dark) {
   .pos-wrapper {
@@ -1340,11 +1357,6 @@ watch(searchQuery, (newVal) => {
   .pos-card-med {
     background-color: #1e293b;
     border-color: #334155;
-  }
-  .category-pill {
-    background: #1e293b;
-    border-color: #334155;
-    color: #cbd5e1;
   }
   .card-title-name,
   .item-table-name {
@@ -1358,7 +1370,7 @@ watch(searchQuery, (newVal) => {
   .cart-tr-row td {
     border-color: #334155;
   }
-  .client-quick-bar,
+  .client-select-bar,
   .cart-bottom-checkout {
     background-color: #1e293b !important;
     border-color: #334155 !important;

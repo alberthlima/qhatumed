@@ -43,7 +43,7 @@ const store = async() => {
         if(response.status === 200 || response.status === 201){
           toast.showSuccess('Cliente guardado con éxito', 'Éxito')
           emit('update:isDialogVisible', false)
-          emit('addCliente')
+          emit('addCliente', response._data?.data || response._data)
         } else {
           toast.showError('Error al guardar', 'Error')
         }
