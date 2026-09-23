@@ -65,9 +65,21 @@ const isCheckoutModalOpen = ref(false)
 const isInvoice = ref(true)
 const businessName = ref('CONTROL TRIBUTARIO')
 const nitCi = ref('0')
+const complement = ref('')
+const customerEmail = ref('')
+const cardNumber = ref('')
 const paymentMethod = ref(1) // 1: Efectivo, 2: Tarjeta, 7: QR
-const documentType = ref(1)   // 1: CI
+const documentType = ref(1)   // 1: CI, 5: NIT, 2: CEX, 3: PAS, 4: OD
 const isAddClientDialog = ref(false)
+
+// Tipos de Documento SIAT
+const documentTypesList = [
+  { value: 1, title: '1 - CI (Cédula de Identidad)' },
+  { value: 5, title: '5 - NIT (Número de Identificación Tributaria)' },
+  { value: 2, title: '2 - CEX (Cédula de Extranjero)' },
+  { value: 3, title: '3 - PAS (Pasaporte)' },
+  { value: 4, title: '4 - OD (Otro Documento)' }
+]
 
 // Modal de Resultado
 const isResultDialog = ref(false)
@@ -75,9 +87,9 @@ const saleResult = ref(null)
 
 // Métodos de Pago visuales
 const paymentMethodsList = [
-  { value: 1, title: 'Efectivo', icon: 'ri-money-dollar-circle-line' },
-  { value: 2, title: 'Tarjeta', icon: 'ri-bank-card-line' },
-  { value: 7, title: 'QR / Transfer.', icon: 'ri-qr-code-line' }
+  { value: 1, title: 'Efectivo', icon: 'ri-money-dollar-circle-line', desc: 'Pago en billetes/monedas' },
+  { value: 2, title: 'Tarjeta', icon: 'ri-bank-card-line', desc: 'Débito / Crédito' },
+  { value: 7, title: 'QR / Transfer.', icon: 'ri-qr-code-line', desc: 'Transferencia bancaria' }
 ]
 
 // Billetes rápidos para cambio en efectivo
@@ -126,11 +138,14 @@ const filteredProducts = computed(() => {
 })
 
 const subtotal = computed(() => {
-  return cart.value.reduce((total, item) => total + (Number(item.sale_price || 0) * item.quantity), 0)
+  return cart.value.reduce((total, item) => {
+    const itemSub = (Number(item.sale_price || 0) * item.quantity) - Number(item.discount || 0)
+    return total + Math.max(0, itemSub)
+  }, 0)
 })
 
 const total = computed(() => {
-  return Math.max(0, subtotal.value - discount.value)
+  return Math.max(0, subtotal.value - Number(discount.value || 0))
 })
 
 const change = computed(() => {
@@ -149,12 +164,23 @@ watch(selectedCustomer, (newVal) => {
     if (customer) {
       businessName.value = `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || customer.first_name || 'S/N'
       nitCi.value = customer.document_number || '0'
-      documentType.value = customer.document_type || 1
+      complement.value = customer.complement || ''
+      customerEmail.value = customer.email || ''
+      documentType.value = customer.document_type || (customer.document_number?.length > 8 ? 5 : 1)
     }
   } else {
     businessName.value = 'CONTROL TRIBUTARIO'
     nitCi.value = '0'
+    complement.value = ''
+    customerEmail.value = ''
     documentType.value = 1
+  }
+})
+
+// Si el NIT/CI cambia a longitud grande, sugerir NIT
+watch(nitCi, (newVal) => {
+  if (newVal && String(newVal).length >= 9 && documentType.value === 1) {
+    documentType.value = 5 // NIT
   }
 })
 
@@ -168,7 +194,11 @@ const addToCart = (product) => {
       toast.showWarning(`Stock máximo alcanzado (${product.stock} unds)`, 'Stock')
     }
   } else {
-    cart.value.push({ ...product, quantity: 1 })
+    cart.value.push({ 
+      ...product, 
+      quantity: 1,
+      discount: 0 
+    })
   }
 }
 
@@ -204,6 +234,7 @@ const clearCart = () => {
   cart.value = []
   cashTendered.value = 0
   discount.value = 0
+  cardNumber.value = ''
 }
 
 const openCheckoutModal = () => {
@@ -227,22 +258,33 @@ const setQuickCash = (amount) => {
 const checkout = async () => {
   if (cart.value.length === 0) return
 
+  // Validación SIAT de Tarjeta
+  if (paymentMethod.value === 2 && isInvoice.value && cardNumber.value && cardNumber.value.length < 4) {
+    toast.showWarning('Ingrese al menos los últimos 4 dígitos de la tarjeta para facturación SIAT.', 'Dato Requerido')
+    return
+  }
+
   const payload = {
     customer_id: selectedCustomer.value,
     business_name: businessName.value || 'CONTROL TRIBUTARIO',
     nit_ci: nitCi.value || '0',
+    complement: complement.value || null,
+    customer_email: customerEmail.value || null,
     sale_date: saleDate.value,
     total_amount: total.value,
-    cash_tendered: cashTendered.value || total.value,
-    change: change.value,
+    cash_tendered: paymentMethod.value === 1 ? (cashTendered.value || total.value) : total.value,
+    change: paymentMethod.value === 1 ? change.value : 0,
     payment_method_code: paymentMethod.value,
     document_type_code: documentType.value,
+    card_number: paymentMethod.value === 2 ? cardNumber.value : null,
+    discount_amount: Number(discount.value || 0),
     is_invoice: isInvoice.value,
     items: cart.value.map(item => ({
       product_id: item.id,
       quantity: item.quantity,
       unit_price: item.sale_price,
-      item_discount: 0
+      discount: Number(item.discount || 0),
+      item_discount: Number(item.discount || 0)
     }))
   }
 
@@ -513,11 +555,11 @@ watch(searchQuery, (newVal) => {
             <table v-else class="cart-items-table">
               <thead>
                 <tr class="cart-th-row">
-                  <th class="text-left" style="min-width: 140px;">Producto</th>
-                  <th class="text-center" style="width: 105px;">Cant.</th>
-                  <th class="text-right" style="width: 75px;">P. Unit</th>
-                  <th class="text-right" style="width: 80px;">Total</th>
-                  <th class="text-center" style="width: 32px;"></th>
+                  <th class="text-left" style="min-width: 130px;">Producto</th>
+                  <th class="text-center" style="width: 95px;">Cant.</th>
+                  <th class="text-right" style="width: 70px;">P. Unit</th>
+                  <th class="text-right" style="width: 75px;">Total</th>
+                  <th class="text-center" style="width: 28px;"></th>
                 </tr>
               </thead>
               <tbody>
@@ -555,7 +597,7 @@ watch(searchQuery, (newVal) => {
 
                   <!-- Subtotal de Línea -->
                   <td class="text-right font-weight-black text-caption text-primary">
-                    Bs. {{ (item.quantity * Number(item.sale_price || 0)).toFixed(2) }}
+                    Bs. {{ (item.quantity * Number(item.sale_price || 0) - Number(item.discount || 0)).toFixed(2) }}
                   </td>
 
                   <!-- Botón Eliminar -->
@@ -569,15 +611,32 @@ watch(searchQuery, (newVal) => {
             </table>
           </div>
 
-          <!-- 4. TOTALES Y BOTÓN DE COBRO (FIJO INFERIOR) -->
+          <!-- 4. TOTALES, DESCUENTO GLOBAL Y BOTÓN DE COBRO (FIJO INFERIOR) -->
           <div class="cart-bottom-checkout pa-3 bg-grey-lighten-5 border-t">
-            <!-- Desglose de Totales -->
+            <!-- Desglose de Totales y Descuento -->
             <div class="d-flex justify-space-between align-center mb-1">
               <span class="text-caption text-medium-emphasis">Subtotal:</span>
               <span class="text-body-2 font-weight-bold">Bs. {{ subtotal.toFixed(2) }}</span>
             </div>
 
-            <div class="d-flex justify-space-between align-center mb-3">
+            <!-- Descuento Global (SIAT) -->
+            <div class="d-flex justify-space-between align-center mb-1">
+              <span class="text-caption text-warning font-weight-bold d-flex align-center">
+                <VIcon icon="ri-discount-percent-line" size="14" class="me-1" /> Descuento:
+              </span>
+              <div class="d-flex align-center" style="width: 100px;">
+                <input 
+                  type="number" 
+                  v-model.number="discount" 
+                  min="0" 
+                  step="0.5" 
+                  placeholder="0.00"
+                  class="discount-mini-input"
+                />
+              </div>
+            </div>
+
+            <div class="d-flex justify-space-between align-center mb-3 pt-1 border-t">
               <span class="text-subtitle-1 font-weight-black text-high-emphasis">TOTAL A PAGAR:</span>
               <span class="text-h5 font-weight-black text-primary">Bs. {{ total.toFixed(2) }}</span>
             </div>
@@ -601,12 +660,13 @@ watch(searchQuery, (newVal) => {
     </VRow>
 
     <!-- ======================================================= -->
-    <!-- MODAL DE PAGO / CHECKOUT PROFESIONAL (SE ABRE AL COBRAR) -->
+    <!-- MODAL DE PAGO / CHECKOUT PROFESIONAL (SCROLLABLE & FIJO) -->
     <!-- ======================================================= -->
-    <VDialog v-model="isCheckoutModalOpen" max-width="560" persistent>
-      <VCard class="rounded-xl overflow-hidden">
-        <!-- Cabecera del Modal de Pago -->
-        <VCardTitle class="bg-primary text-white d-flex justify-space-between align-center py-3 px-4">
+    <VDialog v-model="isCheckoutModalOpen" max-width="600" scrollable persistent>
+      <VCard class="checkout-modal-card rounded-xl overflow-hidden d-flex flex-column" style="max-height: 88vh;">
+        
+        <!-- 1. Cabecera del Modal (Fija) -->
+        <VCardTitle class="bg-primary text-white d-flex justify-space-between align-center py-3 px-4 flex-shrink-0">
           <div class="d-flex align-center">
             <VIcon icon="ri-hand-coin-line" size="24" class="me-2" />
             <span class="text-subtitle-1 font-weight-bold text-white">Finalizar Venta y Cobro</span>
@@ -614,22 +674,27 @@ watch(searchQuery, (newVal) => {
           <VBtn icon="ri-close-line" variant="text" color="white" size="small" @click="isCheckoutModalOpen = false" />
         </VCardTitle>
 
-        <VCardText class="pa-4">
+        <!-- 2. Cuerpo del Modal (Con Scroll Interno Limpio) -->
+        <VCardText class="pa-4 overflow-y-auto checkout-modal-body">
           <!-- Resumen de Monto Total -->
-          <div class="total-banner pa-3 rounded-xl bg-primary-lighten-5 border border-primary border-opacity-25 d-flex justify-space-between align-center mb-4">
+          <div class="total-banner pa-3 rounded-xl bg-primary-lighten-5 border border-primary border-opacity-25 d-flex justify-space-between align-center mb-3">
             <div>
-              <span class="text-caption text-uppercase font-weight-bold text-primary">Total a Cobrar</span>
-              <div class="text-caption text-medium-emphasis">{{ cart.length }} productos seleccionados</div>
+              <span class="text-caption text-uppercase font-weight-bold text-primary">Monto Total Fiscal</span>
+              <div class="text-caption text-medium-emphasis">
+                {{ cart.length }} productos <span v-if="discount > 0">(Desc: -Bs. {{ Number(discount).toFixed(2) }})</span>
+              </div>
             </div>
             <div class="text-h4 font-weight-black text-primary">
               Bs. {{ total.toFixed(2) }}
             </div>
           </div>
 
-          <!-- 1. Método de Pago (Tiles Visuales Grandes) -->
-          <div class="mb-4">
-            <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-2">Seleccione Método de Pago</div>
-            <div class="d-flex gap-2">
+          <!-- SELECCIÓN DE MÉTODO DE PAGO (TILES VISUALES HIGH-CONTRAST) -->
+          <div class="mb-3">
+            <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-1">
+              Método de Pago (Normado SIN)
+            </div>
+            <div class="modal-payment-grid d-flex gap-2">
               <div 
                 v-for="pm in paymentMethodsList" 
                 :key="pm.value"
@@ -637,14 +702,15 @@ watch(searchQuery, (newVal) => {
                 :class="{ active: paymentMethod === pm.value }"
                 @click="paymentMethod = pm.value"
               >
-                <VIcon :icon="pm.icon" size="24" class="mb-1" />
-                <span class="font-weight-bold text-caption">{{ pm.title }}</span>
+                <VIcon :icon="pm.icon" size="24" class="mb-1 pm-icon" />
+                <span class="pm-title">{{ pm.title }}</span>
+                <span class="pm-desc">{{ pm.desc }}</span>
               </div>
             </div>
           </div>
 
-          <!-- 2. Si es Efectivo: Paga Con + Billetes Rápidos + Cambio -->
-          <div v-if="paymentMethod === 1" class="cash-calc-box pa-3 rounded-xl bg-grey-lighten-4 mb-4 border">
+          <!-- EFECTIVO: Paga Con + Billetes Rápidos + Cambio -->
+          <div v-if="paymentMethod === 1" class="cash-calc-box pa-3 rounded-xl mb-3 border">
             <VRow density="compact" class="align-center mb-2">
               <VCol cols="6">
                 <VTextField 
@@ -660,11 +726,11 @@ watch(searchQuery, (newVal) => {
                 />
               </VCol>
               <VCol cols="6">
-                <div class="change-display-box pa-2 rounded-lg border text-center" :class="change >= 0 ? 'bg-green-lighten-5 border-green' : 'bg-red-lighten-5'">
-                  <div class="text-caption font-weight-bold text-uppercase" :class="change >= 0 ? 'text-green-darken-3' : 'text-error'">
+                <div class="change-display-box pa-2 rounded-lg border text-center" :class="change >= 0 ? 'change-ok' : 'change-err'">
+                  <div class="text-caption font-weight-bold text-uppercase">
                     {{ change >= 0 ? 'Cambio / Vuelto' : 'Falta Dinero' }}
                   </div>
-                  <div class="text-h5 font-weight-black" :class="change >= 0 ? 'text-green-darken-4' : 'text-error'">
+                  <div class="text-h5 font-weight-black">
                     Bs. {{ Math.abs(change).toFixed(2) }}
                   </div>
                 </div>
@@ -697,7 +763,26 @@ watch(searchQuery, (newVal) => {
             </div>
           </div>
 
-          <!-- 3. Datos Fiscales (Factura SIAT vs Recibo) -->
+          <!-- TARJETA: Número de Tarjeta (Exigido por SIAT) -->
+          <div v-if="paymentMethod === 2" class="card-info-box pa-3 rounded-xl mb-3 border">
+            <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-2">
+              Datos de Tarjeta (SIAT Crédito / Débito)
+            </div>
+            <VTextField 
+              v-model="cardNumber" 
+              label="Número o Últimos 4 Dígitos de Tarjeta" 
+              placeholder="Ej. 4567 o 4567000000001234"
+              variant="outlined" 
+              density="comfortable" 
+              prepend-inner-icon="ri-bank-card-line"
+              hide-details
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              El SIAT enmascara automáticamente los dígitos centrales por seguridad bancaria.
+            </div>
+          </div>
+
+          <!-- DATOS FISCALES SIAT (FACTURA VS NOTA DE VENTA) -->
           <div class="fiscal-settings-box pa-3 rounded-xl border bg-surface mb-2">
             <div class="d-flex align-center justify-space-between mb-2">
               <div class="d-flex align-center">
@@ -707,23 +792,66 @@ watch(searchQuery, (newVal) => {
               <VSwitch v-model="isInvoice" color="primary" density="compact" hide-details inset />
             </div>
 
-            <!-- Cliente Razón Social y NIT -->
+            <!-- Campos Fiscales SIAT -->
             <VRow density="compact" class="mt-1">
+              <!-- Tipo de Documento -->
               <VCol cols="12" sm="6">
-                <VTextField 
-                  v-model="businessName" 
-                  label="Razón Social / Nombre" 
+                <VSelect 
+                  v-model="documentType" 
+                  :items="documentTypesList"
+                  item-title="title"
+                  item-value="value"
+                  label="Tipo de Documento Identidad *"
                   variant="outlined" 
                   density="compact" 
                   hide-details
                 />
               </VCol>
-              <VCol cols="12" sm="6">
+
+              <!-- NIT / CI -->
+              <VCol cols="12" sm="4">
                 <VTextField 
                   v-model="nitCi" 
-                  label="NIT / CI" 
+                  label="NIT / CI *" 
                   variant="outlined" 
                   density="compact" 
+                  hide-details
+                />
+              </VCol>
+
+              <!-- Complemento -->
+              <VCol cols="12" sm="2">
+                <VTextField 
+                  v-model="complement" 
+                  label="Compl." 
+                  placeholder="1A"
+                  variant="outlined" 
+                  density="compact" 
+                  hide-details
+                />
+              </VCol>
+
+              <!-- Razón Social -->
+              <VCol cols="12" sm="6">
+                <VTextField 
+                  v-model="businessName" 
+                  label="Razón Social / Nombre *" 
+                  variant="outlined" 
+                  density="compact" 
+                  hide-details
+                />
+              </VCol>
+
+              <!-- Correo Cliente (Para Envío Automático) -->
+              <VCol cols="12" sm="6">
+                <VTextField 
+                  v-model="customerEmail" 
+                  type="email"
+                  label="Correo Electrónico (Para XML/PDF)" 
+                  placeholder="cliente@correo.com"
+                  variant="outlined" 
+                  density="compact" 
+                  prepend-inner-icon="ri-mail-line"
                   hide-details
                 />
               </VCol>
@@ -731,7 +859,8 @@ watch(searchQuery, (newVal) => {
           </div>
         </VCardText>
 
-        <VCardActions class="pa-4 bg-grey-lighten-4 border-t d-flex justify-space-between">
+        <!-- 3. Acciones del Modal (Fijas al Pie) -->
+        <VCardActions class="pa-3 px-4 bg-grey-lighten-4 border-t flex-shrink-0 d-flex justify-space-between align-center">
           <VBtn variant="tonal" color="secondary" class="font-weight-bold px-4" @click="isCheckoutModalOpen = false">
             Regresar al Carrito
           </VBtn>
@@ -746,7 +875,7 @@ watch(searchQuery, (newVal) => {
             @click="checkout"
           >
             <VIcon start icon="ri-checkbox-circle-line" />
-            <span>CONFIRMAR Y EMITIR COMPROBANTE</span>
+            <span>CONFIRMAR Y EMITIR FACTURA</span>
           </VBtn>
         </VCardActions>
       </VCard>
@@ -1028,7 +1157,7 @@ watch(searchQuery, (newVal) => {
   min-height: 200px;
   display: flex;
   flex-direction: column;
-  align-center: center;
+  align-items: center;
   justify-content: center;
   text-align: center;
   padding: 40px 10px;
@@ -1117,35 +1246,89 @@ watch(searchQuery, (newVal) => {
 }
 .btn-del-row:hover { opacity: 1; }
 
+.discount-mini-input {
+  width: 100%;
+  padding: 2px 6px;
+  border: 1px dashed #f59e0b;
+  border-radius: 6px;
+  background: #fffbeb;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #b45309;
+  text-align: right;
+}
+.discount-mini-input:focus {
+  outline: none;
+  border-color: #d97706;
+}
+
 .btn-open-payment {
   letter-spacing: 0.5px;
-  height: 48px !important;
+  height: 46px !important;
 }
 
 /* Modal de Pago */
+.checkout-modal-body::-webkit-scrollbar {
+  width: 5px;
+}
+.checkout-modal-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.modal-payment-grid {
+  display: flex;
+  gap: 8px;
+}
+
 .modal-payment-tile {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 12px 6px;
-  background: #f8fafc;
+  padding: 10px 6px;
+  background: #ffffff;
   border: 2px solid #e2e8f0;
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
+  color: #1e293b;
 }
 
 .modal-payment-tile:hover {
-  border-color: #cbd5e1;
+  border-color: #94a3b8;
 }
 
 .modal-payment-tile.active {
-  background: #eef2ff;
+  background: #eff2fe;
   border-color: #5c61e6;
   color: #5c61e6;
 }
+
+.pm-icon {
+  color: inherit;
+}
+
+.pm-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: inherit;
+}
+
+.pm-desc {
+  font-size: 0.65rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.modal-payment-tile.active .pm-desc {
+  color: #5c61e6;
+  font-weight: 600;
+}
+
+.change-ok { background: #dcfce7; border-color: #86efac; color: #15803d; }
+.change-err { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
 
 /* Dark mode overrides */
 @media (prefers-color-scheme: dark) {
@@ -1189,6 +1372,40 @@ watch(searchQuery, (newVal) => {
   }
   .stepper-input {
     color: #f1f5f9;
+  }
+  .discount-mini-input {
+    background: rgba(245, 158, 11, 0.1);
+    color: #fbbf24;
+    border-color: #d97706;
+  }
+  
+  /* Modal en Dark Mode */
+  .modal-payment-tile {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #f1f5f9 !important;
+  }
+  .modal-payment-tile .pm-desc {
+    color: #94a3b8 !important;
+  }
+  .modal-payment-tile:hover {
+    border-color: #64748b !important;
+  }
+  .modal-payment-tile.active {
+    background: #1e1b4b !important;
+    border-color: #6366f1 !important;
+    color: #818cf8 !important;
+  }
+  .modal-payment-tile.active .pm-desc {
+    color: #a5b4fc !important;
+  }
+  .cash-calc-box {
+    background: #0f172a !important;
+    border-color: #334155 !important;
+  }
+  .fiscal-settings-box {
+    background: #1e293b !important;
+    border-color: #334155 !important;
   }
 }
 </style>
