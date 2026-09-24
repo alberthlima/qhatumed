@@ -12,7 +12,7 @@ const isAnnulDialog = ref(false)
 const selectedSale = ref(null)
 const annulReason = ref(1) // 1: Factura mal emitida
 
-const isOnlyInvoices = computed(() => route.query.type === 'invoices')
+const isOnlyInvoices = computed(() => route.query.type === 'invoices' || route.name === 'facturas' || route.path.includes('/facturas'))
 
 // Filtros para Reporte de Facturación SIAT
 const filterDateFrom = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)) // Primer día del mes actual

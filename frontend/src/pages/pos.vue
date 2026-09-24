@@ -502,7 +502,7 @@ watch(searchQuery, (newVal) => {
           </div>
 
           <!-- 2. SELECTOR DE CLIENTE CON AUTOCOMPLETE LIVE-SEARCH Y BOTÓN CREAR -->
-          <div class="client-select-bar px-3 py-2 bg-grey-lighten-4 border-b">
+          <div class="client-select-bar px-3 py-2 border-b">
             <div class="d-flex align-center gap-2">
               <VAutocomplete
                 v-model="selectedCustomer"
@@ -616,7 +616,7 @@ watch(searchQuery, (newVal) => {
           </div>
 
           <!-- 4. TOTALES, DESCUENTO GLOBAL Y BOTÓN DE COBRO (FIJO INFERIOR) -->
-          <div class="cart-bottom-checkout pa-3 bg-grey-lighten-5 border-t">
+          <div class="cart-bottom-checkout pa-3 border-t">
             <!-- Desglose de Totales y Descuento -->
             <div class="d-flex justify-space-between align-center mb-1">
               <span class="text-caption text-medium-emphasis">Subtotal:</span>
@@ -871,7 +871,7 @@ watch(searchQuery, (newVal) => {
         </VCardText>
 
         <!-- 3. Acciones del Modal (Fijas al Pie) -->
-        <VCardActions class="pa-3 px-4 bg-grey-lighten-4 border-t flex-shrink-0 d-flex justify-space-between align-center">
+        <VCardActions class="pa-3 px-4 modal-actions-footer border-t flex-shrink-0 d-flex justify-space-between align-center">
           <VBtn variant="tonal" color="secondary" class="font-weight-bold px-4" @click="isCheckoutModalOpen = false">
             Regresar al Carrito
           </VBtn>
@@ -1019,7 +1019,7 @@ watch(searchQuery, (newVal) => {
 .pos-wrapper {
   height: calc(100vh - 80px);
   overflow: hidden;
-  background-color: #f4f6f8;
+  background-color: #f1f5f9;
 }
 
 .pos-main-row {
@@ -1036,6 +1036,11 @@ watch(searchQuery, (newVal) => {
   overflow: hidden;
 }
 
+.catalog-header-bar {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+}
+
 /* Product Cards */
 .pos-card-med {
   background: #ffffff;
@@ -1048,17 +1053,18 @@ watch(searchQuery, (newVal) => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .pos-card-med:hover:not(.is-disabled) {
   transform: translateY(-2px);
-  border-color: #5c61e6;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.05);
+  border-color: #6366f1;
+  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.12);
 }
 
 .pos-card-med.is-in-cart {
-  border-color: #5c61e6;
-  background-color: #f8f9ff;
+  border-color: #6366f1;
+  background-color: #eef2ff;
 }
 
 .pos-card-med.is-disabled {
@@ -1083,10 +1089,10 @@ watch(searchQuery, (newVal) => {
   text-transform: uppercase;
 }
 
-.stock-ok { background: #dcfce7; color: #15803d; }
-.stock-low { background: #fef9c3; color: #a16207; }
-.stock-out { background: #fee2e2; color: #b91c1c; }
-.stock-expired { background: #fee2e2; color: #b91c1c; }
+.stock-ok { background: #dcfce7; color: #166534; }
+.stock-low { background: #fef9c3; color: #854d0e; }
+.stock-out { background: #fee2e2; color: #991b1b; }
+.stock-expired { background: #fee2e2; color: #991b1b; }
 
 .card-img-wrapper {
   width: 100%;
@@ -1113,7 +1119,7 @@ watch(searchQuery, (newVal) => {
 .card-title-name {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #1e293b;
+  color: #0f172a;
   line-height: 1.2;
   margin: 1px 0 4px 0;
   display: -webkit-box;
@@ -1134,7 +1140,7 @@ watch(searchQuery, (newVal) => {
   height: 26px;
   border-radius: 6px;
   border: none;
-  background: #5c61e6;
+  background: #6366f1;
   color: white;
   display: flex;
   align-items: center;
@@ -1144,14 +1150,20 @@ watch(searchQuery, (newVal) => {
 }
 
 .btn-quick-add:hover:not(:disabled) {
-  background: #474cc7;
+  background: #4f46e5;
   transform: scale(1.1);
 }
 
 /* Cart Container */
 .cart-card-container {
   background: #ffffff;
+  border-color: #e2e8f0;
   overflow: hidden;
+}
+
+.client-select-bar {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
 }
 
 .cart-table-wrapper {
@@ -1174,7 +1186,7 @@ watch(searchQuery, (newVal) => {
   justify-content: center;
   text-align: center;
   padding: 40px 10px;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .cart-items-table {
@@ -1187,7 +1199,7 @@ watch(searchQuery, (newVal) => {
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
-  color: #64748b;
+  color: #475569;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
 }
@@ -1201,7 +1213,7 @@ watch(searchQuery, (newVal) => {
 .item-table-name {
   font-size: 0.78rem;
   font-weight: 700;
-  color: #1e293b;
+  color: #0f172a;
   line-height: 1.2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1219,6 +1231,7 @@ watch(searchQuery, (newVal) => {
   display: inline-flex;
   align-items: center;
   background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
   padding: 2px 4px;
   gap: 2px;
@@ -1228,14 +1241,14 @@ watch(searchQuery, (newVal) => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: none;
-  background: white;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
   color: #334155;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 
 .stepper-input {
@@ -1258,6 +1271,11 @@ watch(searchQuery, (newVal) => {
   opacity: 0.7;
 }
 .btn-del-row:hover { opacity: 1; }
+
+.cart-bottom-checkout {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+}
 
 .discount-mini-input {
   width: 100%;
@@ -1314,9 +1332,9 @@ watch(searchQuery, (newVal) => {
 }
 
 .modal-payment-tile.active {
-  background: #eff2fe;
-  border-color: #5c61e6;
-  color: #5c61e6;
+  background: #eef2ff;
+  border-color: #6366f1;
+  color: #4f46e5;
 }
 
 .pm-icon {
@@ -1336,7 +1354,7 @@ watch(searchQuery, (newVal) => {
 }
 
 .modal-payment-tile.active .pm-desc {
-  color: #5c61e6;
+  color: #4f46e5;
   font-weight: 600;
 }
 
@@ -1347,77 +1365,130 @@ watch(searchQuery, (newVal) => {
   pointer-events: none;
 }
 
-/* Dark mode overrides */
-@media (prefers-color-scheme: dark) {
-  .pos-wrapper {
-    background-color: #0f172a;
-  }
-  .catalog-header-bar,
-  .cart-card-container,
-  .pos-card-med {
-    background-color: #1e293b;
-    border-color: #334155;
-  }
-  .card-title-name,
-  .item-table-name {
-    color: #f1f5f9;
-  }
-  .cart-th-row th {
-    background-color: #0f172a;
-    color: #94a3b8;
-    border-color: #334155;
-  }
-  .cart-tr-row td {
-    border-color: #334155;
-  }
-  .client-select-bar,
-  .cart-bottom-checkout {
-    background-color: #1e293b !important;
-    border-color: #334155 !important;
-  }
-  .stepper-box {
-    background: #0f172a;
-  }
-  .stepper-btn {
-    background: #334155;
-    color: #f1f5f9;
-  }
-  .stepper-input {
-    color: #f1f5f9;
-  }
-  .discount-mini-input {
-    background: rgba(245, 158, 11, 0.1);
-    color: #fbbf24;
-    border-color: #d97706;
-  }
-  
-  /* Modal en Dark Mode */
-  .modal-payment-tile {
-    background: #1e293b !important;
-    border-color: #334155 !important;
-    color: #f1f5f9 !important;
-  }
-  .modal-payment-tile .pm-desc {
-    color: #94a3b8 !important;
-  }
-  .modal-payment-tile:hover {
-    border-color: #64748b !important;
-  }
-  .modal-payment-tile.active {
-    background: #1e1b4b !important;
-    border-color: #6366f1 !important;
-    color: #818cf8 !important;
-  }
-  .modal-payment-tile.active .pm-desc {
-    color: #a5b4fc !important;
-  }
-  .cash-calc-box {
-    background: #0f172a !important;
-    border-color: #334155 !important;
-  }
-  .fiscal-settings-box {
-    background: #1e293b !important;
-    border-color: #334155 !important;
-  }
+.modal-actions-footer {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.cash-calc-box,
+.fiscal-settings-box,
+.card-info-box {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+/* ========================================================= */
+/* MODO OSCURO (Controlado por Vuetify .v-theme--dark)       */
+/* ========================================================= */
+:global(.v-theme--dark) .pos-wrapper {
+  background-color: #0f172a;
+}
+
+:global(.v-theme--dark) .catalog-header-bar,
+:global(.v-theme--dark) .cart-card-container,
+:global(.v-theme--dark) .pos-card-med {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+:global(.v-theme--dark) .pos-card-med:hover:not(.is-disabled) {
+  border-color: #818cf8;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
+:global(.v-theme--dark) .pos-card-med.is-in-cart {
+  background-color: #2e285a;
+  border-color: #818cf8;
+}
+
+:global(.v-theme--dark) .card-img-wrapper {
+  background-color: #0f172a;
+}
+
+:global(.v-theme--dark) .card-title-name,
+:global(.v-theme--dark) .item-table-name {
+  color: #f1f5f9;
+}
+
+:global(.v-theme--dark) .card-lab-name,
+:global(.v-theme--dark) .item-table-lab {
+  color: #2dd4bf;
+}
+
+:global(.v-theme--dark) .card-price-txt {
+  color: #4ade80;
+}
+
+:global(.v-theme--dark) .client-select-bar {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+:global(.v-theme--dark) .cart-th-row th {
+  background-color: #0f172a;
+  color: #94a3b8;
+  border-color: #334155;
+}
+
+:global(.v-theme--dark) .cart-tr-row td {
+  border-color: #334155;
+}
+
+:global(.v-theme--dark) .stepper-box {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+:global(.v-theme--dark) .stepper-btn {
+  background: #334155;
+  color: #f1f5f9;
+  border-color: #475569;
+}
+
+:global(.v-theme--dark) .stepper-input {
+  color: #f1f5f9;
+}
+
+:global(.v-theme--dark) .cart-bottom-checkout {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+:global(.v-theme--dark) .discount-mini-input {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border-color: #d97706;
+}
+
+:global(.v-theme--dark) .modal-payment-tile {
+  background: #1e293b;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+
+:global(.v-theme--dark) .modal-payment-tile:hover {
+  border-color: #64748b;
+}
+
+:global(.v-theme--dark) .modal-payment-tile .pm-desc {
+  color: #94a3b8;
+}
+
+:global(.v-theme--dark) .modal-payment-tile.active {
+  background: #2e285a;
+  border-color: #818cf8;
+  color: #c7d2fe;
+}
+
+:global(.v-theme--dark) .modal-payment-tile.active .pm-desc {
+  color: #a5b4fc;
+}
+
+:global(.v-theme--dark) .modal-actions-footer,
+:global(.v-theme--dark) .cash-calc-box,
+:global(.v-theme--dark) .fiscal-settings-box,
+:global(.v-theme--dark) .card-info-box {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
 }
 </style>

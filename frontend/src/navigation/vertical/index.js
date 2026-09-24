@@ -163,7 +163,7 @@ export default [
       },
       {
         title: "Lista de Facturas",
-        to: { name: "ventas", query: { type: "invoices" } },
+        to: { name: 'facturas' },
         permission: "listar_venta",
         icon: { icon: "ri-file-list-line" },
       },
