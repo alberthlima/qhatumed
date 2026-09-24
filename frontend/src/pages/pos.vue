@@ -458,7 +458,7 @@ watch(searchQuery, (newVal) => {
             </VCol>
           </VRow>
 
-          <div v-else-if="!isFetching && filteredProducts.length === 0" class="empty-state-box">
+          <div v-else-if="!isFetching && filteredProducts.length === 0" class="empty-state-box text-center py-12">
             <VIcon icon="ri-inbox-line" size="48" class="text-disabled mb-1" />
             <div class="text-body-1 font-weight-bold text-medium-emphasis">No se encontraron medicamentos</div>
             <p class="text-caption text-disabled">Intente con otro término de búsqueda.</p>
@@ -1017,9 +1017,9 @@ watch(searchQuery, (newVal) => {
 
 <style scoped>
 .pos-wrapper {
-  height: calc(100vh - 80px);
+  height: calc(100vh - 75px);
   overflow: hidden;
-  background-color: #f1f5f9;
+  background-color: rgb(var(--v-theme-background));
 }
 
 .pos-main-row {
@@ -1037,14 +1037,14 @@ watch(searchQuery, (newVal) => {
 }
 
 .catalog-header-bar {
-  background-color: #ffffff;
-  border-color: #e2e8f0;
+  background-color: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 /* Product Cards */
 .pos-card-med {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background-color: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 12px;
   padding: 8px;
   cursor: pointer;
@@ -1053,18 +1053,18 @@ watch(searchQuery, (newVal) => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 .pos-card-med:hover:not(.is-disabled) {
   transform: translateY(-2px);
-  border-color: #6366f1;
-  box-shadow: 0 6px 14px rgba(99, 102, 241, 0.12);
+  border-color: rgb(var(--v-theme-primary));
+  box-shadow: 0 6px 14px rgba(102, 108, 255, 0.2);
 }
 
 .pos-card-med.is-in-cart {
-  border-color: #6366f1;
-  background-color: #eef2ff;
+  border-color: rgb(var(--v-theme-primary));
+  background-color: rgba(var(--v-theme-primary), 0.12);
 }
 
 .pos-card-med.is-disabled {
@@ -1098,7 +1098,7 @@ watch(searchQuery, (newVal) => {
   width: 100%;
   border-radius: 8px;
   overflow: hidden;
-  background: #f8fafc;
+  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
 .card-body-wrapper {
@@ -1109,30 +1109,30 @@ watch(searchQuery, (newVal) => {
 }
 
 .card-lab-name {
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  color: #0d9488;
+  color: #26c6f9;
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
 
 .card-title-name {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  color: #0f172a;
-  line-height: 1.2;
-  margin: 1px 0 4px 0;
+  color: rgb(var(--v-theme-on-surface));
+  line-height: 1.25;
+  margin: 2px 0 4px 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 2.4em;
+  min-height: 2.5em;
 }
 
 .card-price-txt {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 900;
-  color: #16a34a;
+  color: #72e128;
 }
 
 .btn-quick-add {
@@ -1140,7 +1140,7 @@ watch(searchQuery, (newVal) => {
   height: 26px;
   border-radius: 6px;
   border: none;
-  background: #6366f1;
+  background: rgb(var(--v-theme-primary));
   color: white;
   display: flex;
   align-items: center;
@@ -1150,20 +1150,20 @@ watch(searchQuery, (newVal) => {
 }
 
 .btn-quick-add:hover:not(:disabled) {
-  background: #4f46e5;
+  opacity: 0.9;
   transform: scale(1.1);
 }
 
 /* Cart Container */
 .cart-card-container {
-  background: #ffffff;
-  border-color: #e2e8f0;
+  background-color: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   overflow: hidden;
 }
 
 .client-select-bar {
-  background-color: #f8fafc;
-  border-color: #e2e8f0;
+  background-color: rgba(var(--v-theme-on-surface), 0.03);
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 .cart-table-wrapper {
@@ -1173,7 +1173,7 @@ watch(searchQuery, (newVal) => {
   width: 4px;
 }
 .cart-table-wrapper::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: rgba(var(--v-theme-on-surface), 0.2);
   border-radius: 4px;
 }
 
@@ -1199,21 +1199,21 @@ watch(searchQuery, (newVal) => {
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
-  color: #475569;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  background-color: rgba(var(--v-theme-on-surface), 0.04);
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 .cart-tr-row td {
   padding: 6px 8px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.06);
   vertical-align: middle;
 }
 
 .item-table-name {
   font-size: 0.78rem;
   font-weight: 700;
-  color: #0f172a;
+  color: rgb(var(--v-theme-on-surface));
   line-height: 1.2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1224,14 +1224,14 @@ watch(searchQuery, (newVal) => {
 .item-table-lab {
   font-size: 0.65rem;
   font-weight: 600;
-  color: #0d9488;
+  color: #26c6f9;
 }
 
 .stepper-box {
   display: inline-flex;
   align-items: center;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  background: rgba(var(--v-theme-on-surface), 0.06);
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 16px;
   padding: 2px 4px;
   gap: 2px;
@@ -1241,14 +1241,13 @@ watch(searchQuery, (newVal) => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #334155;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 
 .stepper-input {
@@ -1258,39 +1257,39 @@ watch(searchQuery, (newVal) => {
   text-align: center;
   font-size: 0.78rem;
   font-weight: 800;
-  color: #0f172a;
+  color: rgb(var(--v-theme-on-surface));
 }
 .stepper-input:focus { outline: none; }
 
 .btn-del-row {
   border: none;
   background: transparent;
-  color: #ef4444;
+  color: #ff4d49;
   cursor: pointer;
   padding: 0;
-  opacity: 0.7;
+  opacity: 0.8;
 }
 .btn-del-row:hover { opacity: 1; }
 
 .cart-bottom-checkout {
-  background-color: #f8fafc;
-  border-color: #e2e8f0;
+  background-color: rgba(var(--v-theme-on-surface), 0.03);
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 .discount-mini-input {
   width: 100%;
   padding: 2px 6px;
-  border: 1px dashed #f59e0b;
+  border: 1px dashed #fdb528;
   border-radius: 6px;
-  background: #fffbeb;
+  background: rgba(253, 181, 40, 0.1);
   font-size: 0.8rem;
   font-weight: 700;
-  color: #b45309;
+  color: #fdb528;
   text-align: right;
 }
 .discount-mini-input:focus {
   outline: none;
-  border-color: #d97706;
+  border-color: #e4a324;
 }
 
 .btn-open-payment {
@@ -1303,7 +1302,7 @@ watch(searchQuery, (newVal) => {
   width: 5px;
 }
 .checkout-modal-body::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: rgba(var(--v-theme-on-surface), 0.2);
   border-radius: 4px;
 }
 
@@ -1319,22 +1318,22 @@ watch(searchQuery, (newVal) => {
   align-items: center;
   justify-content: center;
   padding: 10px 6px;
-  background: #ffffff;
-  border: 2px solid #e2e8f0;
+  background: rgb(var(--v-theme-surface));
+  border: 2px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
-  color: #1e293b;
+  color: rgb(var(--v-theme-on-surface));
 }
 
 .modal-payment-tile:hover {
-  border-color: #94a3b8;
+  border-color: rgb(var(--v-theme-primary));
 }
 
 .modal-payment-tile.active {
-  background: #eef2ff;
-  border-color: #6366f1;
-  color: #4f46e5;
+  background: rgba(var(--v-theme-primary), 0.12);
+  border-color: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-primary));
 }
 
 .pm-icon {
@@ -1349,146 +1348,31 @@ watch(searchQuery, (newVal) => {
 
 .pm-desc {
   font-size: 0.65rem;
-  color: #64748b;
+  color: rgba(var(--v-theme-on-surface), 0.7);
   text-align: center;
 }
 
 .modal-payment-tile.active .pm-desc {
-  color: #4f46e5;
+  color: rgb(var(--v-theme-primary));
   font-weight: 600;
 }
 
-.change-ok { background: #dcfce7; border-color: #86efac; color: #15803d; }
-.change-err { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+.change-ok { background: rgba(114, 225, 40, 0.15); border-color: #72e128; color: #72e128; }
+.change-err { background: rgba(255, 77, 73, 0.15); border-color: #ff4d49; color: #ff4d49; }
 
 .pointer-events-none {
   pointer-events: none;
 }
 
 .modal-actions-footer {
-  background-color: #f8fafc;
-  border-color: #e2e8f0;
+  background-color: rgba(var(--v-theme-on-surface), 0.03);
+  border-color: rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
 .cash-calc-box,
 .fiscal-settings-box,
 .card-info-box {
-  background-color: #f8fafc;
-  border-color: #e2e8f0;
-}
-
-/* ========================================================= */
-/* MODO OSCURO (Controlado por Vuetify .v-theme--dark)       */
-/* ========================================================= */
-:global(.v-theme--dark) .pos-wrapper {
-  background-color: #0f172a;
-}
-
-:global(.v-theme--dark) .catalog-header-bar,
-:global(.v-theme--dark) .cart-card-container,
-:global(.v-theme--dark) .pos-card-med {
-  background-color: #1e293b;
-  border-color: #334155;
-}
-
-:global(.v-theme--dark) .pos-card-med:hover:not(.is-disabled) {
-  border-color: #818cf8;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
-}
-
-:global(.v-theme--dark) .pos-card-med.is-in-cart {
-  background-color: #2e285a;
-  border-color: #818cf8;
-}
-
-:global(.v-theme--dark) .card-img-wrapper {
-  background-color: #0f172a;
-}
-
-:global(.v-theme--dark) .card-title-name,
-:global(.v-theme--dark) .item-table-name {
-  color: #f1f5f9;
-}
-
-:global(.v-theme--dark) .card-lab-name,
-:global(.v-theme--dark) .item-table-lab {
-  color: #2dd4bf;
-}
-
-:global(.v-theme--dark) .card-price-txt {
-  color: #4ade80;
-}
-
-:global(.v-theme--dark) .client-select-bar {
-  background-color: #1e293b;
-  border-color: #334155;
-}
-
-:global(.v-theme--dark) .cart-th-row th {
-  background-color: #0f172a;
-  color: #94a3b8;
-  border-color: #334155;
-}
-
-:global(.v-theme--dark) .cart-tr-row td {
-  border-color: #334155;
-}
-
-:global(.v-theme--dark) .stepper-box {
-  background: #0f172a;
-  border-color: #334155;
-}
-
-:global(.v-theme--dark) .stepper-btn {
-  background: #334155;
-  color: #f1f5f9;
-  border-color: #475569;
-}
-
-:global(.v-theme--dark) .stepper-input {
-  color: #f1f5f9;
-}
-
-:global(.v-theme--dark) .cart-bottom-checkout {
-  background-color: #1e293b;
-  border-color: #334155;
-}
-
-:global(.v-theme--dark) .discount-mini-input {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border-color: #d97706;
-}
-
-:global(.v-theme--dark) .modal-payment-tile {
-  background: #1e293b;
-  border-color: #334155;
-  color: #f1f5f9;
-}
-
-:global(.v-theme--dark) .modal-payment-tile:hover {
-  border-color: #64748b;
-}
-
-:global(.v-theme--dark) .modal-payment-tile .pm-desc {
-  color: #94a3b8;
-}
-
-:global(.v-theme--dark) .modal-payment-tile.active {
-  background: #2e285a;
-  border-color: #818cf8;
-  color: #c7d2fe;
-}
-
-:global(.v-theme--dark) .modal-payment-tile.active .pm-desc {
-  color: #a5b4fc;
-}
-
-:global(.v-theme--dark) .modal-actions-footer,
-:global(.v-theme--dark) .cash-calc-box,
-:global(.v-theme--dark) .fiscal-settings-box,
-:global(.v-theme--dark) .card-info-box {
-  background-color: #1e293b !important;
-  border-color: #334155 !important;
+  background-color: rgba(var(--v-theme-on-surface), 0.03);
+  border-color: rgba(var(--v-border-color), var(--v-border-opacity));
 }
 </style>
