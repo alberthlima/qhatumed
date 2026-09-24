@@ -42,6 +42,14 @@ const router = createRouter({
         meta: {
           permission: 'listar_rol'
         }
+      },
+      {
+        path: '/facturas',
+        name: 'facturas',
+        component: () => import('@/pages/facturas.vue'),
+        meta: {
+          permission: 'listar_venta'
+        }
       }
     ]].map(route => recursiveLayouts(route)),
   ],
