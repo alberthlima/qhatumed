@@ -37,6 +37,7 @@ class SaleService
                 'cuf'                 => null,
                 'cufd'                => null,
                 'payment_method_code' => $data['payment_method_code'] ?? 1,
+                'card_number'         => $data['card_number'] ?? null,
                 'document_type_code'  => $data['document_type_code'] ?? 1,
                 'is_invoice'          => $data['is_invoice'] ?? true,
                 

@@ -28,6 +28,7 @@ class StoreSaleRequest extends FormRequest
 
             // SIAT Campos
             'payment_method_code' => 'sometimes|integer',
+            'card_number'         => 'nullable|string',
             'document_type_code'  => 'sometimes|integer',
             'is_invoice'          => 'sometimes|boolean',
             

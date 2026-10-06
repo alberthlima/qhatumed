@@ -68,6 +68,19 @@ class SaleController extends Controller
         ]);
 
         try {
+            // Validación de plazo normativo (RND 102100000011 Art. 45)
+            if ($sale->sale_date) {
+                $fechaEmision = \Carbon\Carbon::parse($sale->sale_date)->timezone('America/La_Paz');
+                $limiteAnulacion = $fechaEmision->copy()->addMonth()->startOfMonth()->addDays(9)->endOfDay();
+                if (\Carbon\Carbon::now('America/La_Paz')->greaterThan($limiteAnulacion)) {
+                    $fEmit = $fechaEmision->format('d/m/Y');
+                    $fLim = $limiteAnulacion->format('d/m/Y');
+                    return response()->json([
+                        'error' => "Plazo de anulación vencido. Según normativa RND 102100000011 Art. 45, la factura fue emitida el {$fEmit} y el plazo máximo de anulación venció el {$fLim}."
+                    ], 422);
+                }
+            }
+
             // Si la venta tiene factura SIAT, anular primero en el SIN
             if ($sale->cuf) {
                 $siat = app(SiatInvoiceService::class);
@@ -163,11 +176,19 @@ class SaleController extends Controller
             // Obtener XML desde el microservicio siat-api-service
             $xmlContent = null;
             try {
-                $xmlRes = \Illuminate\Support\Facades\Http::timeout(10)->get("http://127.0.0.1:8001/admin/facturas/{$sale->cuf}/xml");
-                if ($xmlRes->successful()) {
+                $apiUrl = rtrim(config('siat.api_url', 'http://127.0.0.1:8001/api/v1'), '/');
+                $apiKey = config('siat.api_key', 'siat_live_key_9941a87bf23d8c4e01');
+                $xmlRes = \Illuminate\Support\Facades\Http::withHeaders([
+                    'X-API-KEY' => $apiKey,
+                    'Accept'    => 'application/xml, application/json'
+                ])->timeout(10)->get("{$apiUrl}/facturas/{$sale->cuf}/xml");
+
+                if ($xmlRes->successful() && !empty($xmlRes->body())) {
                     $xmlContent = $xmlRes->body();
                 }
-            } catch (\Throwable $e) {}
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("No se pudo obtener XML desde microservicio: " . $e->getMessage());
+            }
 
             \Illuminate\Support\Facades\Mail::to($request->email)
                 ->send(new \App\Mail\FacturaMailable($sale, $pdfContent, $xmlContent));

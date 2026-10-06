@@ -261,10 +261,12 @@ const setQuickCash = (amount) => {
 const checkout = async () => {
   if (cart.value.length === 0) return
 
-  // Validación SIAT de Tarjeta
-  if (paymentMethod.value === 2 && isInvoice.value && cardNumber.value && cardNumber.value.length < 4) {
-    toast.showWarning('Ingrese al menos los últimos 4 dígitos de la tarjeta para facturación SIAT.', 'Dato Requerido')
-    return
+  // Validación SIAT de Tarjeta (Exigida por normativa cuando el método es Tarjeta)
+  if (paymentMethod.value === 2 && isInvoice.value) {
+    if (!cardNumber.value || cardNumber.value.trim().length < 4) {
+      toast.showWarning('Ingrese los 16 dígitos (o al menos los últimos 4) de la tarjeta para facturación SIAT.', 'Dato Requerido')
+      return
+    }
   }
 
   const payload = {

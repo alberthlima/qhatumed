@@ -25,10 +25,13 @@ const form = ref({
 })
 
 const motivosEvento = [
-  { title: 'Corte de energía eléctrica', value: 1 },
-  { title: 'Falla del servicio de internet', value: 2 },
-  { title: 'Inaccesibilidad al servicio web de la Administración Tributaria', value: 3 },
-  { title: 'Falla en el software de facturación o problemas de hardware', value: 4 }
+  { title: '1 - Corte de suministro de energía eléctrica (Manual con CAFC)', value: 1 },
+  { title: '2 - Inaccesibilidad al Servicio Web del SIN (Fuera de línea)', value: 2 },
+  { title: '3 - Ingreso a zonas sin internet por despliegue o vehículos', value: 3 },
+  { title: '4 - Venta en lugares sin internet constante', value: 4 },
+  { title: '5 - Virus informático o falla de software (Manual con CAFC)', value: 5 },
+  { title: '6 - Cambio de infraestructura o falla de hardware (Manual con CAFC)', value: 6 },
+  { title: '7 - Corte del servicio de internet (Fuera de línea)', value: 7 }
 ]
 
 // Cargar historial de eventos de contingencia

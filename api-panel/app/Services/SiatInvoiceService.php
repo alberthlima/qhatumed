@@ -96,7 +96,7 @@ class SiatInvoiceService
             'codigo_cliente'                  => (string) ($sale->customer_id ?? $sale->nit_ci ?? '0'),
             'correo_cliente'                  => $sale->customer?->email ?: null,
             'codigo_metodo_pago'              => (int) ($sale->payment_method_code ?? 1),
-            'numero_tarjeta'                  => null,
+            'numero_tarjeta'                  => $sale->card_number ?: null,
             'monto_total'                     => (float) $sale->total_amount,
             'descuento_adicional'             => 0,
             'items'                           => $itemsPayload,
@@ -125,6 +125,8 @@ class SiatInvoiceService
                 'cufd'        => $data['cufd'] ?? null,
                 'siat_uid'    => $data['codigo_recepcion'] ?? null,
                 'invoice_url' => $data['qr'] ?? null,
+                'leyenda'     => $data['leyenda'] ?? null,
+                'card_number' => $data['numero_tarjeta'] ?? $sale->card_number,
                 'status'      => 'COMPLETED',
             ]);
 

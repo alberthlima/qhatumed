@@ -50,7 +50,10 @@
     <div class="mb-1">
         <strong>FECHA:</strong> {{ \Carbon\Carbon::parse($sale->sale_date)->format('d/m/Y H:i') }}<br>
         <strong>SEÑOR(ES):</strong> {{ $sale->business_name }}<br>
-        <strong>NIT/CI:</strong> {{ $sale->nit_ci }}
+        <strong>NIT/CI:</strong> {{ $sale->nit_ci }}<br>
+        @if($sale->payment_method_code == 2 || !empty($sale->card_number))
+        <strong>MEDIO DE PAGO:</strong> TARJETA - N°: {{ $sale->card_number ?? 'XXXX00000000XXXX' }}<br>
+        @endif
     </div>
 
     <table>
@@ -88,8 +91,9 @@
     </div>
 
     <div class="leyenda">
-        "ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO DE ÉSTA SERÁ SANCIONADO DE ACUERDO A LEY"<br>
-        Ley N° 453: El proveedor de servicios debe prioritariamente informar sobre las características de los productos.
+        <strong>"ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO DE ÉSTA SERÁ SANCIONADO DE ACUERDO A LEY"</strong><br><br>
+        {{ $sale->leyenda ?? 'Ley N° 453: El proveedor debe exhibir el precio total de venta al público en moneda nacional.' }}<br><br>
+        <em>{{ ($sale->codigo_emision ?? 1) == 2 ? 'Este documento es la representación gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación fuera de línea' : 'Este documento es la representación gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea' }}</em>
     </div>
 </body>
 </html>

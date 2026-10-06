@@ -43,6 +43,9 @@ Route::group([
         // Configuraciones de Empresa y SIAT
         Route::get('settings', [\App\Http\Controllers\CompanySettingController::class, 'show']);
         Route::post('settings', [\App\Http\Controllers\CompanySettingController::class, 'update']);
+        Route::get('siat/contingencias', [\App\Http\Controllers\Api\V1\SiatContingenciaController::class, 'index']);
+        Route::post('siat/contingencias', [\App\Http\Controllers\Api\V1\SiatContingenciaController::class, 'store']);
+        Route::post('siat/contingencias/{id}/transmitir', [\App\Http\Controllers\Api\V1\SiatContingenciaController::class, 'transmitir']);
 
         // Core Entities
         Route::post('products/{product}/associate-barcode', [\App\Http\Controllers\Api\V1\ProductController::class, 'associateBarcode']);

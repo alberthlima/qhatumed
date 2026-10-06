@@ -64,6 +64,12 @@
             <td class="bold">SEÑOR(ES):</td>
             <td colspan="3">{{ $sale->business_name }}</td>
         </tr>
+        @if($sale->payment_method_code == 2 || !empty($sale->card_number))
+        <tr>
+            <td class="bold">MEDIO DE PAGO:</td>
+            <td colspan="3">TARJETA - N°: {{ $sale->card_number ?? 'XXXX00000000XXXX' }}</td>
+        </tr>
+        @endif
     </table>
 
     <table class="items-table">
@@ -94,8 +100,7 @@
             </tr>
             <tr>
                 <td colspan="5" class="text-left">
-                    <strong>Son: </strong> {{-- Here we could use a number-to-words library if we had one --}} 
-                    {{ number_format($sale->total_amount, 2) }} Bolivianos
+                    <strong>Son: </strong> {{ $literalAmount ?? number_format($sale->total_amount, 2) }} Bolivianos
                 </td>
             </tr>
         </tfoot>
@@ -104,10 +109,9 @@
     <table class="footer-table">
         <tr>
             <td class="footer-left">
-                <p>"ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO DE ÉSTA SERÁ SANCIONADO DE ACUERDO A LEY"</p>
-                <p>Ley N° 453: El proveedor de servicios debe prioritariamente informar sobre las características de los productos.</p>
-                <br>
-                <p><strong>CÓDIGO DE CONTROL:</strong> {{-- SIAT ya no usa código de control como antes, todo es CUF, pero se deja por estructura si se llegara a usar --}}</p>
+                <p><strong>"ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO DE ÉSTA SERÁ SANCIONADO DE ACUERDO A LEY"</strong></p>
+                <p>{{ $sale->leyenda ?? 'Ley N° 453: El proveedor debe exhibir el precio total de venta al público en moneda nacional.' }}</p>
+                <p style="font-size: 9px; margin-top: 6px;"><em>{{ ($sale->codigo_emision ?? 1) == 2 ? 'Este documento es la representación gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación fuera de línea' : 'Este documento es la representación gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea' }}</em></p>
             </td>
             <td class="footer-right">
                 @if($qrCode)
