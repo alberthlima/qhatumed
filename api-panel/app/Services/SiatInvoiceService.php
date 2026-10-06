@@ -85,15 +85,35 @@ class SiatInvoiceService
             ];
         }
 
+        $docType = (int) ($sale->document_type_code ?? 1);
+        $docNumber = trim((string) ($sale->nit_ci ?? '0'));
+        $businessName = trim((string) ($sale->business_name ?: 'CONTROL TRIBUTARIO'));
+
+        // Regla Normativa SIAT (RND 102100000011):
+        // El SIAT rechaza con error [1048] si numeroDocumento es '0'.
+        // Para procedimientos de Control Tributario o compras sin datos del cliente,
+        // se debe consignar Tipo 5 (NIT) con el código fijo 99002 y razón social 'CONTROL TRIBUTARIO'.
+        if ($docNumber === '0' || empty($docNumber) || strtoupper($businessName) === 'CONTROL TRIBUTARIO') {
+            $docType = 5;
+            $docNumber = '99002';
+            $businessName = 'CONTROL TRIBUTARIO';
+
+            $sale->update([
+                'nit_ci'             => '99002',
+                'document_type_code' => 5,
+                'business_name'      => 'CONTROL TRIBUTARIO'
+            ]);
+        }
+
         $payload = [
             'codigo_sucursal'                 => (int) ($this->config['sucursal'] ?? 0),
             'codigo_punto_venta'              => (int) ($this->config['punto_venta'] ?? 0),
             'numero_factura'                  => (int) $sale->invoice_number,
-            'codigo_tipo_documento_identidad' => (int) ($sale->document_type_code ?? 1),
-            'numero_documento'                => (string) ($sale->nit_ci ?? '0'),
+            'codigo_tipo_documento_identidad' => $docType,
+            'numero_documento'                => $docNumber,
             'complemento'                     => $sale->customer?->complement ?: null,
-            'razon_social_cliente'            => (string) ($sale->business_name ?: 'CONTROL TRIBUTARIO'),
-            'codigo_cliente'                  => (string) ($sale->customer_id ?? $sale->nit_ci ?? '0'),
+            'razon_social_cliente'            => $businessName,
+            'codigo_cliente'                  => (string) ($sale->customer_id ?? $docNumber),
             'correo_cliente'                  => $sale->customer?->email ?: null,
             'codigo_metodo_pago'              => (int) ($sale->payment_method_code ?? 1),
             'numero_tarjeta'                  => $sale->card_number ?: null,

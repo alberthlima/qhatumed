@@ -62,12 +62,12 @@ const isCheckoutModalOpen = ref(false)
 // Facturación SIAT
 const isInvoice = ref(true)
 const businessName = ref('CONTROL TRIBUTARIO')
-const nitCi = ref('0')
+const nitCi = ref('99002')
 const complement = ref('')
 const customerEmail = ref('')
 const cardNumber = ref('')
 const paymentMethod = ref(1) // 1: Efectivo, 2: Tarjeta, 7: QR
-const documentType = ref(1)   // 1: CI, 5: NIT, 2: CEX, 3: PAS, 4: OD
+const documentType = ref(5)   // 5: NIT (Normado para 99002 Control Tributario)
 const isAddClientDialog = ref(false)
 
 // Tipos de Documento SIAT
@@ -173,12 +173,31 @@ watch(selectedCustomer, (newVal) => {
     }
   } else {
     businessName.value = 'CONTROL TRIBUTARIO'
-    nitCi.value = '0'
+    nitCi.value = '99002'
     complement.value = ''
     customerEmail.value = ''
-    documentType.value = 1
+    documentType.value = 5 // NIT normado para 99002
   }
 })
+
+const setFiscalPreset = (type) => {
+  if (type === 'control') {
+    documentType.value = 5
+    nitCi.value = '99002'
+    businessName.value = 'CONTROL TRIBUTARIO'
+    complement.value = ''
+  } else if (type === 'menores') {
+    documentType.value = 5
+    nitCi.value = '99003'
+    businessName.value = 'VENTAS MENORES DEL DÍA'
+    complement.value = ''
+  } else if (type === 'ci') {
+    documentType.value = 1
+    nitCi.value = ''
+    businessName.value = ''
+    complement.value = ''
+  }
+}
 
 // Auto-detectar NIT si tiene 9 o más dígitos
 watch(nitCi, (newVal) => {
@@ -273,10 +292,22 @@ const checkout = async () => {
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
   const fullSaleDate = saleDate.value ? `${saleDate.value} ${timeStr}` : `${now.toISOString().slice(0, 10)} ${timeStr}`
 
+  let finalDocType = documentType.value
+  let finalNitCi = String(nitCi.value || '').trim()
+  let finalBusinessName = String(businessName.value || '').trim()
+
+  if (isInvoice.value) {
+    if (finalNitCi === '0' || finalNitCi === '' || finalBusinessName.toUpperCase() === 'CONTROL TRIBUTARIO') {
+      finalDocType = 5
+      finalNitCi = '99002'
+      finalBusinessName = 'CONTROL TRIBUTARIO'
+    }
+  }
+
   const payload = {
     customer_id: selectedCustomer.value,
-    business_name: isInvoice.value ? (businessName.value || 'CONTROL TRIBUTARIO') : 'VENTA LOCAL',
-    nit_ci: isInvoice.value ? (nitCi.value || '0') : '0',
+    business_name: isInvoice.value ? (finalBusinessName || 'CONTROL TRIBUTARIO') : 'VENTA LOCAL',
+    nit_ci: isInvoice.value ? finalNitCi : '0',
     complement: isInvoice.value ? (complement.value || null) : null,
     customer_email: isInvoice.value ? (customerEmail.value || null) : null,
     sale_date: fullSaleDate,
@@ -284,7 +315,7 @@ const checkout = async () => {
     cash_tendered: paymentMethod.value === 1 ? (cashTendered.value || total.value) : total.value,
     change: paymentMethod.value === 1 ? change.value : 0,
     payment_method_code: paymentMethod.value,
-    document_type_code: isInvoice.value ? documentType.value : 1,
+    document_type_code: isInvoice.value ? finalDocType : 1,
     card_number: paymentMethod.value === 2 ? cardNumber.value : null,
     discount_amount: Number(discount.value || 0),
     is_invoice: isInvoice.value,
@@ -805,6 +836,21 @@ watch(searchQuery, (newVal) => {
             <!-- Campos Fiscales SIAT (Habilitados si es Factura, Deshabilitados si es Recibo) -->
             <div :class="{ 'opacity-50 pointer-events-none': !isInvoice }">
               <VRow density="compact" class="mt-1">
+                <!-- Accesos Rápidos de Tipo de Cliente Normado -->
+                <VCol cols="12">
+                  <div class="d-flex gap-1 flex-wrap mb-1">
+                    <VChip size="small" variant="tonal" color="info" prepend-icon="ri-shield-check-line" style="cursor: pointer;" @click="setFiscalPreset('control')">
+                      Control Tributario (99002)
+                    </VChip>
+                    <VChip size="small" variant="tonal" color="secondary" prepend-icon="ri-shopping-basket-line" style="cursor: pointer;" @click="setFiscalPreset('menores')">
+                      Ventas Menores (99003)
+                    </VChip>
+                    <VChip size="small" variant="tonal" color="primary" prepend-icon="ri-user-line" style="cursor: pointer;" @click="setFiscalPreset('ci')">
+                      Con Cédula (CI)
+                    </VChip>
+                  </div>
+                </VCol>
+
                 <!-- Tipo de Documento -->
                 <VCol cols="12" sm="6">
                   <VSelect 
