@@ -269,13 +269,17 @@ const checkout = async () => {
     }
   }
 
+  const now = new Date()
+  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+  const fullSaleDate = saleDate.value ? `${saleDate.value} ${timeStr}` : `${now.toISOString().slice(0, 10)} ${timeStr}`
+
   const payload = {
     customer_id: selectedCustomer.value,
     business_name: isInvoice.value ? (businessName.value || 'CONTROL TRIBUTARIO') : 'VENTA LOCAL',
     nit_ci: isInvoice.value ? (nitCi.value || '0') : '0',
     complement: isInvoice.value ? (complement.value || null) : null,
     customer_email: isInvoice.value ? (customerEmail.value || null) : null,
-    sale_date: saleDate.value,
+    sale_date: fullSaleDate,
     total_amount: total.value,
     cash_tendered: paymentMethod.value === 1 ? (cashTendered.value || total.value) : total.value,
     change: paymentMethod.value === 1 ? change.value : 0,

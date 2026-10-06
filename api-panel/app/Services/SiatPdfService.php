@@ -30,17 +30,21 @@ class SiatPdfService
         $sale->loadMissing(['items.product', 'customer', 'user']);
 
         $config = $this->getSiatConfig();
-        $dateFormatted = Carbon::parse($sale->sale_date)->format('d/m/Y H:i');
+        $dateFormatted = $this->resolveSaleDateTime($sale);
+
+        $ambiente = $config['ambiente'] ?? 2;
+        $domain = ($ambiente == 1) ? 'siat.impuestos.gob.bo' : 'pilotosiat.impuestos.gob.bo';
 
         // URL Oficial de Consulta QR del SIN para Facturas en Línea
         $qrContent = sprintf(
-            "https://pilotosiat.impuestos.gob.bo/consulta/QR?nit=%s&cuf=%s&numero=%s&t=1",
+            "https://%s/consulta/QR?nit=%s&cuf=%s&numero=%s&t=1",
+            $domain,
             $config['nit'],
             $sale->cuf,
             $sale->invoice_number
         );
 
-        // Generar QR SVG en base64
+        // Generar QR SVG en base64 (Vectorial y nítido para impresoras térmicas)
         $qrCode = base64_encode(QrCode::format('svg')->size(120)->generate($qrContent));
         $literalAmount = NumberTranslateHelper::toLiteral((float)$sale->total_amount);
 
@@ -55,7 +59,7 @@ class SiatPdfService
 
         // 80mm de ancho (226.77 pt) con alto dinámico
         $itemCount = count($sale->items);
-        $height = max(550, 380 + ($itemCount * 30));
+        $height = max(580, 400 + ($itemCount * 30));
         $pdf->setPaper([0, 0, 226.77, $height], 'portrait');
 
         return $pdf->output();
@@ -69,10 +73,14 @@ class SiatPdfService
         $sale->loadMissing(['items.product', 'customer', 'user']);
 
         $config = $this->getSiatConfig();
-        $dateFormatted = Carbon::parse($sale->sale_date)->format('d/m/Y H:i');
+        $dateFormatted = $this->resolveSaleDateTime($sale);
+
+        $ambiente = $config['ambiente'] ?? 2;
+        $domain = ($ambiente == 1) ? 'siat.impuestos.gob.bo' : 'pilotosiat.impuestos.gob.bo';
 
         $qrContent = sprintf(
-            "https://pilotosiat.impuestos.gob.bo/consulta/QR?nit=%s&cuf=%s&numero=%s&t=1",
+            "https://%s/consulta/QR?nit=%s&cuf=%s&numero=%s&t=1",
+            $domain,
             $config['nit'],
             $sale->cuf,
             $sale->invoice_number
@@ -101,7 +109,7 @@ class SiatPdfService
     public function generateReceipt(Sale $sale)
     {
         $sale->loadMissing(['items.product', 'customer', 'user']);
-        $dateFormatted = Carbon::parse($sale->sale_date)->format('d/m/Y H:i');
+        $dateFormatted = $this->resolveSaleDateTime($sale);
 
         $pdf = Pdf::loadView('siat.recibo_termico', [
             'sale'          => $sale,
@@ -115,6 +123,25 @@ class SiatPdfService
         return $pdf->output();
     }
 
+    /**
+     * Resuelve la fecha y hora exacta de emisión asegurando que nunca salga 00:00.
+     */
+    private function resolveSaleDateTime(Sale $sale): string
+    {
+        $saleCarbon = Carbon::parse($sale->sale_date);
+        
+        // Si la hora es 00:00 pero existe created_at con hora válida, usar created_at
+        if ($saleCarbon->format('H:i') === '00:00') {
+            if ($sale->created_at && Carbon::parse($sale->created_at)->format('H:i') !== '00:00') {
+                $saleCarbon = Carbon::parse($sale->created_at)->timezone('America/La_Paz');
+            } else {
+                $saleCarbon = Carbon::now('America/La_Paz');
+            }
+        }
+
+        return $saleCarbon->format('d/m/Y H:i');
+    }
+
     private function getSiatConfig(): array
     {
         $config = config('siat') ?? [];
@@ -124,15 +151,23 @@ class SiatPdfService
             if ($setting) {
                 if ($setting->legal_name) $config['razon_social'] = $setting->legal_name;
                 if ($setting->nit) $config['nit'] = $setting->nit;
-                if ($setting->siat_branch_code !== null) $config['sucursal'] = $setting->siat_branch_code;
-                if ($setting->siat_pos_code !== null) $config['punto_venta'] = $setting->siat_pos_code;
+                if ($setting->siat_branch_code !== null) $config['sucursal'] = (int) $setting->siat_branch_code;
+                if ($setting->siat_pos_code !== null) $config['punto_venta'] = (int) $setting->siat_pos_code;
+                if ($setting->siat_environment !== null) $config['ambiente'] = (int) $setting->siat_environment;
+                if (!empty($setting->address)) $config['direccion'] = $setting->address;
+                if (!empty($setting->city)) $config['municipio'] = $setting->city;
+                if (!empty($setting->phone)) $config['telefono'] = $setting->phone;
             }
         } catch (\Throwable $e) {}
 
         if (empty($config['razon_social'])) $config['razon_social'] = 'FARMACIA MISALUD';
         if (empty($config['nit'])) $config['nit'] = '6789406016';
-        if (empty($config['direccion'])) $config['direccion'] = 'Av. Principal #123';
+        if (empty($config['direccion'])) $config['direccion'] = 'Av. Principal #123 (Zona Norte)';
         if (empty($config['municipio'])) $config['municipio'] = 'Santa Cruz';
+        if (empty($config['telefono'])) $config['telefono'] = '3-3456789';
+        if (!isset($config['sucursal'])) $config['sucursal'] = 0;
+        if (!isset($config['punto_venta'])) $config['punto_venta'] = 0;
+        if (!isset($config['ambiente'])) $config['ambiente'] = 2;
         if (empty($config['leyenda'])) {
             $config['leyenda'] = 'Ley N° 453: El proveedor de servicios debe prioritariamente informar sobre las características de los productos.';
         }

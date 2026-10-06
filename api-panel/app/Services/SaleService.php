@@ -24,11 +24,22 @@ class SaleService
     {
         return DB::transaction(function () use ($data, $userId) {
             
+            // Calcular fecha y hora exacta
+            $saleDateTime = now('America/La_Paz');
+            if (!empty($data['sale_date'])) {
+                if (strlen($data['sale_date']) <= 10) {
+                    $saleDateTime = \Carbon\Carbon::parse($data['sale_date'], 'America/La_Paz')
+                        ->setTimeFromTimeString(now('America/La_Paz')->format('H:i:s'));
+                } else {
+                    $saleDateTime = \Carbon\Carbon::parse($data['sale_date'])->timezone('America/La_Paz');
+                }
+            }
+
             // 1. Create Sale Header
             $sale = Sale::create([
                 'customer_id'    => $data['customer_id'] ?? null,
                 'user_id'        => $userId,
-                'sale_date'      => $data['sale_date'] ?? now(),
+                'sale_date'      => $saleDateTime,
                 'business_name'  => $data['business_name'] ?? 'S/N',
                 'nit_ci'         => $data['nit_ci'] ?? '0',
                 

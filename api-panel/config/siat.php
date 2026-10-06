@@ -20,6 +20,7 @@ return [
     /*
     | Datos de cabecera y actividad de la empresa
     */
+    'nit'                 => env('SIAT_NIT', '6789406016'),
     'razon_social'        => env('SIAT_RAZON_SOCIAL', 'FARMACIA MISALUD'),
     'municipio'           => env('SIAT_MUNICIPIO', 'Santa Cruz'),
     'direccion'           => env('SIAT_DIRECCION', 'Av. Principal #123 (Zona Norte)'),
