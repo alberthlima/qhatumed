@@ -85,6 +85,11 @@ class SaleService
                 $product->decrement('stock', $quantityNeeded);
             }
 
+            // Validación Normativa SIN: No se permite emitir facturas con importe cero o negativo
+            if ($totalAmount <= 0) {
+                throw new \Exception("Monto inválido: El monto total de la venta debe ser mayor a 0. No se permite registrar ni emitir facturas con importe cero o negativo.");
+            }
+
             // Update Header Total
             $sale->update(['total_amount' => $totalAmount]);
 
