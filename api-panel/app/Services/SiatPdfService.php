@@ -128,11 +128,12 @@ class SiatPdfService
      */
     private function resolveSaleDateTime(Sale $sale): string
     {
-        $saleCarbon = Carbon::parse($sale->sale_date);
+        // El servidor almacena timestamps en UTC; convertimos a la hora oficial de Bolivia (America/La_Paz)
+        $saleCarbon = Carbon::parse($sale->sale_date)->timezone('America/La_Paz');
         
         // Si la hora es 00:00 pero existe created_at con hora válida, usar created_at
         if ($saleCarbon->format('H:i') === '00:00') {
-            if ($sale->created_at && Carbon::parse($sale->created_at)->format('H:i') !== '00:00') {
+            if ($sale->created_at) {
                 $saleCarbon = Carbon::parse($sale->created_at)->timezone('America/La_Paz');
             } else {
                 $saleCarbon = Carbon::now('America/La_Paz');
