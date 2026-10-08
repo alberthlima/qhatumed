@@ -110,8 +110,16 @@
                         Efectivo
                     @elseif($sale->payment_method_code == 2)
                         Tarjeta
-                    @else
+                    @elseif($sale->payment_method_code == 10)
+                        Combinado
+                    @elseif($sale->payment_method_code == 7)
                         QR/Transf.
+                    @elseif($sale->payment_method_code == 27)
+                        Gift Card
+                    @elseif($sale->payment_method_code == 35)
+                        Crédito
+                    @else
+                        Otro
                     @endif
                 </td>
                 <td class="text-right">Bs. {{ number_format($sale->total_amount, 2) }}</td>

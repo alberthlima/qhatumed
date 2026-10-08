@@ -47,6 +47,12 @@ Route::group([
         Route::post('siat/contingencias', [\App\Http\Controllers\Api\V1\SiatContingenciaController::class, 'store']);
         Route::post('siat/contingencias/{id}/transmitir', [\App\Http\Controllers\Api\V1\SiatContingenciaController::class, 'transmitir']);
 
+        // Gestión Oficial de Puntos de Venta (SIAT / SIN - RND 102100000011)
+        Route::get('siat/puntos-venta', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'index']);
+        Route::post('siat/puntos-venta', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'store']);
+        Route::post('siat/puntos-venta/cierre', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'close']);
+        Route::post('siat/puntos-venta/seleccionar', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'select']);
+
         // Core Entities
         Route::post('products/{product}/associate-barcode', [\App\Http\Controllers\Api\V1\ProductController::class, 'associateBarcode']);
         Route::get('products/{product}/barcodes', [\App\Http\Controllers\Api\V1\ProductController::class, 'barcodes']);

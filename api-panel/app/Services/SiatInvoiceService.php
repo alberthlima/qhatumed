@@ -79,9 +79,9 @@ class SiatInvoiceService
                 'descripcion'             => (string) ($product->name ?? 'Producto'),
                 'cantidad'                => (float) $item->quantity,
                 'precio_unitario'         => (float) $item->unit_price,
-                'sub_total'               => (float) ($item->subtotal ?? ($item->quantity * $item->unit_price - ($item->discount ?? 0))),
+                'sub_total'               => round(((float) $item->quantity * (float) $item->unit_price) - (float) ($item->discount ?? 0), 2),
                 'codigo_unidad_medida'    => (int) ($product->siat_unit_measure_code ?? 57),
-                'descuento'               => (float) ($item->discount ?? 0),
+                'descuento'               => round((float) ($item->discount ?? 0), 2),
             ];
         }
 
@@ -89,11 +89,18 @@ class SiatInvoiceService
         $docNumber = trim((string) ($sale->nit_ci ?? '0'));
         $businessName = trim((string) ($sale->business_name ?: 'CONTROL TRIBUTARIO'));
 
-        // Regla Normativa SIAT (RND 102100000011):
-        // El SIAT rechaza con error [1048] si numeroDocumento es '0'.
-        // Para procedimientos de Control Tributario o compras sin datos del cliente,
-        // se debe consignar Tipo 5 (NIT) con el código fijo 99002 y razón social 'CONTROL TRIBUTARIO'.
-        if ($docNumber === '0' || empty($docNumber) || strtoupper($businessName) === 'CONTROL TRIBUTARIO') {
+        // Regla Normativa SIAT (RND 102100000011 Art. 39):
+        // 1. Códigos Especiales (99001, 99002, 99003) se deben consignar con Tipo 5 (NIT).
+        if (in_array($docNumber, ['99001', '99002', '99003'], true)) {
+            $docType = 5;
+            if ($docNumber === '99002' && (empty($businessName) || $businessName === 'S/N')) {
+                $businessName = 'CONTROL TRIBUTARIO';
+            } elseif ($docNumber === '99003' && (empty($businessName) || $businessName === 'S/N')) {
+                $businessName = 'VENTAS MENORES DEL DÍA';
+            } elseif ($docNumber === '99001' && (empty($businessName) || $businessName === 'S/N')) {
+                $businessName = 'CASOS ESPECIALES';
+            }
+        } elseif ($docNumber === '0' || empty($docNumber) || strtoupper($businessName) === 'CONTROL TRIBUTARIO') {
             $docType = 5;
             $docNumber = '99002';
             $businessName = 'CONTROL TRIBUTARIO';
@@ -117,8 +124,10 @@ class SiatInvoiceService
             'correo_cliente'                  => $sale->customer?->email ?: null,
             'codigo_metodo_pago'              => (int) ($sale->payment_method_code ?? 1),
             'numero_tarjeta'                  => $sale->card_number ?: null,
+            'monto_gift_card'                 => ((int) ($sale->payment_method_code ?? 1) === 27 || (float) ($sale->gift_card_amount ?? 0) > 0) ? (float) ($sale->gift_card_amount ?: $sale->total_amount) : null,
             'monto_total'                     => (float) $sale->total_amount,
-            'descuento_adicional'             => 0,
+            'descuento_adicional'             => round((float) ($sale->additional_discount ?? 0), 2),
+            'codigo_excepcion'                => !empty($sale->exception_code) ? (int) $sale->exception_code : null,
             'items'                           => $itemsPayload,
         ];
 

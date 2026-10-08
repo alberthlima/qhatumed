@@ -10,14 +10,19 @@ class Sale extends Model
         'customer_id', 'user_id', 'sale_date', 
         'business_name', 'nit_ci', 'invoice_number', 
         'cuf', 'cufd', 'siat_uid', 'invoice_url', 'leyenda',
-        'total_amount', 'cash_tendered', 'change', 'status',
-        'payment_method_code', 'card_number', 'document_type_code', 'is_invoice'
+        'total_amount', 'additional_discount', 'cash_tendered', 'change', 'status',
+        'payment_method_code', 'card_number', 'card_amount', 'gift_card_amount', 'gift_card_code',
+        'document_type_code', 'exception_code', 'is_invoice'
     ];
 
     protected $casts = [
         'sale_date'    => 'datetime',
         'is_invoice'   => 'boolean',
+        'exception_code' => 'integer',
         'total_amount' => 'decimal:2',
+        'additional_discount' => 'decimal:2',
+        'card_amount' => 'decimal:2',
+        'gift_card_amount' => 'decimal:2',
     ];
 
     public function customer()

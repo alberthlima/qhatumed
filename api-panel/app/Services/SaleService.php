@@ -47,9 +47,13 @@ class SaleService
                 'invoice_number'      => null, 
                 'cuf'                 => null,
                 'cufd'                => null,
-                'payment_method_code' => $data['payment_method_code'] ?? 1,
+                'payment_method_code' => (int) ($data['payment_method_code'] ?? 1),
                 'card_number'         => $data['card_number'] ?? null,
-                'document_type_code'  => $data['document_type_code'] ?? 1,
+                'card_amount'         => round((float) ($data['card_amount'] ?? 0), 2),
+                'gift_card_amount'    => round((float) ($data['gift_card_amount'] ?? 0), 2),
+                'gift_card_code'      => $data['gift_card_code'] ?? null,
+                'document_type_code'  => in_array(trim((string) ($data['nit_ci'] ?? '')), ['99001', '99002', '99003'], true) ? 5 : ($data['document_type_code'] ?? 1),
+                'exception_code'      => isset($data['exception_code']) && (int) $data['exception_code'] > 0 ? (int) $data['exception_code'] : null,
                 'is_invoice'          => $data['is_invoice'] ?? true,
                 
                 'total_amount'   => 0, // Calculated below
@@ -69,10 +73,20 @@ class SaleService
                     throw new \Exception("Stock insuficiente para el producto: {$product->name}. Stock actual: {$product->stock}");
                 }
 
-                $unitPrice = $itemData['unit_price'] ?? $product->sale_price;
-                $discount = $itemData['discount'] ?? 0;
+                $unitPrice = round((float) ($itemData['unit_price'] ?? $product->sale_price), 2);
+                $discount = round((float) ($itemData['discount'] ?? 0), 2);
+                $grossAmount = round($quantityNeeded * $unitPrice, 2);
+
+                // Norma SIN: subTotal = (cantidad x precioUnitario) - montoDescuento.
+                // En el XSD oficial del SIN (Factura Compra Venta), subTotal tiene la restricción minExclusive="0.0"
+                // (debe ser estrictamente mayor a 0). Si se aplica un descuento del 100%, el tope legal es (importe bruto - 0.01 Bs).
+                if ($discount >= $grossAmount && $grossAmount > 0.01) {
+                    $discount = round($grossAmount - 0.01, 2);
+                } elseif ($discount > $grossAmount) {
+                    throw new \Exception("Descuento inválido en {$product->name}: el descuento (Bs. {$discount}) no puede superar el importe del ítem (Bs. {$grossAmount}).");
+                }
                 
-                $itemSubtotal = ($quantityNeeded * $unitPrice) - $discount;
+                $itemSubtotal = round($grossAmount - $discount, 2);
                 $totalAmount += $itemSubtotal;
 
                 // Snapshot the average cost at the time of sale for financial reports
@@ -85,13 +99,32 @@ class SaleService
                 $product->decrement('stock', $quantityNeeded);
             }
 
-            // Validación Normativa SIN: No se permite emitir facturas con importe cero o negativo
-            if ($totalAmount <= 0) {
-                throw new \Exception("Monto inválido: El monto total de la venta debe ser mayor a 0. No se permite registrar ni emitir facturas con importe cero o negativo.");
+            // Norma SIN: montoTotal = Σ subTotal - descuentoAdicional
+            $additionalDiscount = round((float) ($data['discount_amount'] ?? 0), 2);
+            if ($additionalDiscount > $totalAmount) {
+                throw new \Exception("Descuento adicional inválido: (Bs. {$additionalDiscount}) no puede superar la suma de subtotales (Bs. " . number_format($totalAmount, 2) . ").");
+            }
+            $totalAmount = round($totalAmount - $additionalDiscount, 2);
+
+            // Validación Normativa SIN: No se permite emitir facturas con importe cero o negativo,
+            // salvo en pagos totales cubiertos por Gift Card (Código 27)
+            if ($totalAmount <= 0 && (int) $sale->payment_method_code !== 27) {
+                throw new \Exception("Monto inválido: El monto total de la venta debe ser mayor a 0. No se permite registrar ni emitir facturas con importe cero o negativo, salvo pagos cubiertos por Gift Card.");
+            }
+
+            // Si es combinado, validar coherencia de desglose efectivo + tarjeta
+            if ((int) $sale->payment_method_code === 10) {
+                $cardPortion = round((float) ($sale->card_amount ?? 0), 2);
+                if ($cardPortion <= 0 || $cardPortion >= $totalAmount) {
+                    throw new \Exception("Pago combinado inválido: El monto en tarjeta debe ser mayor a 0 y menor al total de la venta (Bs. " . number_format($totalAmount, 2) . ").");
+                }
             }
 
             // Update Header Total
-            $sale->update(['total_amount' => $totalAmount]);
+            $sale->update([
+                'total_amount'        => $totalAmount,
+                'additional_discount' => $additionalDiscount,
+            ]);
 
             // 3. SIAT FACTURACIÓN (Si está habilitado)
             if ($sale->is_invoice) {
@@ -106,23 +139,62 @@ class SaleService
                 ->first();
 
             if ($openSession) {
-                $methodMap = [
-                    1 => 'EFECTIVO',
-                    2 => 'TARJETA',
-                    7 => 'QR'
-                ];
-                $methodStr = $methodMap[$sale->payment_method_code] ?? 'EFECTIVO';
+                $saleNum = $sale->invoice_number ?: $sale->id;
 
-                \App\Models\CashMovement::create([
-                    'cash_register_session_id' => $openSession->id,
-                    'user_id'                  => $userId,
-                    'type'                     => 'IN',
-                    'amount'                   => $sale->total_amount,
-                    'payment_method'           => $methodStr,
-                    'description'              => "Venta #" . ($sale->invoice_number ?: $sale->id),
-                    'reference_id'             => $sale->id,
-                    'reference_type'           => \App\Models\Sale::class
-                ]);
+                if ((int) $sale->payment_method_code === 10) {
+                    // Método Combinado: Dividir exactamente en movimiento de efectivo y movimiento de tarjeta
+                    $cardPart = round((float) ($sale->card_amount ?? 0), 2);
+                    $cashPart = round(max(0, $sale->total_amount - $cardPart), 2);
+
+                    if ($cashPart > 0) {
+                        \App\Models\CashMovement::create([
+                            'cash_register_session_id' => $openSession->id,
+                            'user_id'                  => $userId,
+                            'type'                     => 'IN',
+                            'amount'                   => $cashPart,
+                            'payment_method'           => 'EFECTIVO',
+                            'description'              => "Venta #{$saleNum} (Efectivo parte combinada)",
+                            'reference_id'             => $sale->id,
+                            'reference_type'           => \App\Models\Sale::class
+                        ]);
+                    }
+
+                    if ($cardPart > 0) {
+                        \App\Models\CashMovement::create([
+                            'cash_register_session_id' => $openSession->id,
+                            'user_id'                  => $userId,
+                            'type'                     => 'IN',
+                            'amount'                   => $cardPart,
+                            'payment_method'           => 'TARJETA',
+                            'description'              => "Venta #{$saleNum} (Tarjeta parte combinada)",
+                            'reference_id'             => $sale->id,
+                            'reference_type'           => \App\Models\Sale::class
+                        ]);
+                    }
+                } else {
+                    $methodMap = [
+                        1  => 'EFECTIVO',
+                        2  => 'TARJETA',
+                        7  => 'QR',
+                        27 => 'GIFT_CARD',
+                        35 => 'PAGO_POSTERIOR',
+                    ];
+                    $methodStr = $methodMap[$sale->payment_method_code] ?? 'EFECTIVO';
+
+                    // Ventas a crédito o pago posterior no ingresan dinero físico a la caja de turno
+                    if ((int) $sale->payment_method_code !== 35) {
+                        \App\Models\CashMovement::create([
+                            'cash_register_session_id' => $openSession->id,
+                            'user_id'                  => $userId,
+                            'type'                     => 'IN',
+                            'amount'                   => $sale->total_amount,
+                            'payment_method'           => $methodStr,
+                            'description'              => "Venta #{$saleNum}" . ($sale->payment_method_code == 27 ? " (Gift Card)" : ""),
+                            'reference_id'             => $sale->id,
+                            'reference_type'           => \App\Models\Sale::class
+                        ]);
+                    }
+                }
             }
 
             return $sale->load(['items', 'customer']);
@@ -135,6 +207,7 @@ class SaleService
     private function deductFefoStock($saleId, $product, $quantityNeeded, $unitPrice, $discount, $costAtSale)
     {
         $remainingQuantity = $quantityNeeded;
+        $chunks = []; // [quantity, purchase_item_id|null, batch_cost|null]
 
         // Get available batches ordered by expiration date (FEFO)
         $batches = $product->activeBatches()->lockForUpdate()->get();
@@ -148,43 +221,39 @@ class SaleService
             
             // Deduct from the physical batch
             $batch->decrement('current_stock', $deductAmount);
-            
-            // Pro-rate discount if multiple batches were used for the same product line
-            $proRatedDiscount = ($deductAmount / $quantityNeeded) * $discount;
-            $proRatedSubtotal = ($deductAmount * $unitPrice) - $proRatedDiscount;
 
-            // Register specific Sale Item tied to this physical batch
-            SaleItem::create([
-                'sale_id'              => $saleId,
-                'product_id'           => $product->id,
-                'purchase_item_id'     => $batch->id,
-                'quantity'             => $deductAmount,
-                'unit_price'           => $unitPrice,
-                'discount'             => $proRatedDiscount,
-                'subtotal'             => $proRatedSubtotal,
-                'average_cost_at_sale' => $costAtSale, // CPP reference
-                'batch_cost_at_sale'   => $batch->unit_cost // Exact batch cost reference
-            ]);
-
+            $chunks[] = [$deductAmount, $batch->id, $batch->unit_cost];
             $remainingQuantity -= $deductAmount;
         }
 
         // If there's still quantity remaining but no batches, it means we had ghost stock.
         // For emergency selling, we attach it to a ghost batch (null purchase_item_id).
         if ($remainingQuantity > 0) {
-            $proRatedDiscount = ($remainingQuantity / $quantityNeeded) * $discount;
-            $proRatedSubtotal = ($remainingQuantity * $unitPrice) - $proRatedDiscount;
+            $chunks[] = [$remainingQuantity, null, null];
+        }
+
+        // Pro-rate the item discount across the batch lines. Each line is rounded to cents and
+        // the last line absorbs the remainder, so that sum(line discounts) == item discount.
+        // (SIAT validates subTotal = cantidad x precioUnitario - montoDescuento per line.)
+        $discountLeft = round((float) $discount, 2);
+        $lastIndex = count($chunks) - 1;
+
+        foreach ($chunks as $i => [$qty, $purchaseItemId, $batchCost]) {
+            $lineDiscount = ($i === $lastIndex)
+                ? $discountLeft
+                : min($discountLeft, round(($qty / $quantityNeeded) * $discount, 2));
+            $discountLeft = round($discountLeft - $lineDiscount, 2);
 
             SaleItem::create([
                 'sale_id'              => $saleId,
                 'product_id'           => $product->id,
-                'purchase_item_id'     => null, // Ghost Stock
-                'quantity'             => $remainingQuantity,
+                'purchase_item_id'     => $purchaseItemId,
+                'quantity'             => $qty,
                 'unit_price'           => $unitPrice,
-                'discount'             => $proRatedDiscount,
-                'subtotal'             => $proRatedSubtotal,
-                'average_cost_at_sale' => $costAtSale,
-                'batch_cost_at_sale'   => null
+                'discount'             => $lineDiscount,
+                'subtotal'             => round(($qty * $unitPrice) - $lineDiscount, 2),
+                'average_cost_at_sale' => $costAtSale, // CPP reference
+                'batch_cost_at_sale'   => $batchCost,  // Exact batch cost reference (null for ghost stock)
             ]);
         }
     }

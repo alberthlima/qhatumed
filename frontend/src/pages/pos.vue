@@ -66,8 +66,13 @@ const nitCi = ref('99002')
 const complement = ref('')
 const customerEmail = ref('')
 const cardNumber = ref('')
-const paymentMethod = ref(1) // 1: Efectivo, 2: Tarjeta, 7: QR
+const splitCashAmount = ref(0)
+const splitCardAmount = ref(0)
+const giftCardCode = ref('')
+const giftCardAmount = ref(0)
+const paymentMethod = ref(1) // 1: Efectivo, 2: Tarjeta, 10: Combinado, 7: QR, 27: Gift Card, 35: Pago Posterior
 const documentType = ref(5)   // 5: NIT (Normado para 99002 Control Tributario)
+const hasExceptionCode = ref(false) // Código de Excepción (1 = NIT no registrado/observado en padrón SIN)
 const isAddClientDialog = ref(false)
 
 // Tipos de Documento SIAT
@@ -83,11 +88,14 @@ const documentTypesList = [
 const isResultDialog = ref(false)
 const saleResult = ref(null)
 
-// Métodos de Pago visuales
+// Métodos de Pago visuales (Normados SIN - Sistema Proveedor)
 const paymentMethodsList = [
   { value: 1, title: 'Efectivo', icon: 'ri-money-dollar-circle-line', desc: 'Billetes / Monedas' },
   { value: 2, title: 'Tarjeta', icon: 'ri-bank-card-line', desc: 'Débito / Crédito' },
-  { value: 7, title: 'QR / Transfer.', icon: 'ri-qr-code-line', desc: 'Transferencia bancaria' }
+  { value: 10, title: 'Combinado', icon: 'ri-scales-3-line', desc: 'Efectivo + Tarjeta' },
+  { value: 7, title: 'QR / Transfer.', icon: 'ri-qr-code-line', desc: 'Transferencia bancaria' },
+  { value: 27, title: 'Gift Card', icon: 'ri-gift-line', desc: 'Tarjeta Regalo / Vale' },
+  { value: 35, title: 'Pago Posterior', icon: 'ri-calendar-schedule-line', desc: 'Venta a Crédito' }
 ]
 
 // Billetes rápidos para cambio en efectivo
@@ -152,7 +160,10 @@ const total = computed(() => {
 })
 
 const change = computed(() => {
-  return cashTendered.value > 0 ? Math.max(0, cashTendered.value - total.value) : 0
+  if (paymentMethod.value === 10) {
+    return cashTendered.value > 0 ? Math.max(0, Number((cashTendered.value - splitCashAmount.value).toFixed(2))) : 0
+  }
+  return cashTendered.value > 0 ? Math.max(0, Number((cashTendered.value - total.value).toFixed(2))) : 0
 })
 
 const isToday = computed(() => {
@@ -186,24 +197,101 @@ const setFiscalPreset = (type) => {
     nitCi.value = '99002'
     businessName.value = 'CONTROL TRIBUTARIO'
     complement.value = ''
+    hasExceptionCode.value = false
   } else if (type === 'menores') {
     documentType.value = 5
     nitCi.value = '99003'
     businessName.value = 'VENTAS MENORES DEL DÍA'
     complement.value = ''
+    hasExceptionCode.value = false
+  } else if (type === 'especial') {
+    documentType.value = 5
+    nitCi.value = '99001'
+    businessName.value = 'CASOS ESPECIALES'
+    complement.value = ''
+    hasExceptionCode.value = false
   } else if (type === 'ci') {
     documentType.value = 1
     nitCi.value = ''
     businessName.value = ''
     complement.value = ''
+    hasExceptionCode.value = false
   }
 }
 
-// Auto-detectar NIT si tiene 9 o más dígitos
-watch(nitCi, (newVal) => {
-  if (newVal && String(newVal).length >= 9 && documentType.value === 1) {
+// Validación y restricción de formato numérico para NIT / CI.
+// Solo aplica a tipos 1 (CI) y 5 (NIT); CEX / Pasaporte / Otro documento pueden ser alfanuméricos.
+watch([nitCi, documentType], ([newVal, docType]) => {
+  if (!newVal) return
+
+  if ([1, 5].includes(docType) && /[^\d]/.test(String(newVal))) {
+    nitCi.value = String(newVal).replace(/\D/g, '')
+    toast.showWarning(
+      'La casilla NIT/CI es de formato estrictamente numérico. Se restringió la inclusión de letras o texto.',
+      'Restricción de Formato (SIN)'
+    )
+    return
+  }
+
+  // Auto-detectar NIT si tiene 9 o más dígitos y está en CI
+  if (String(newVal).length >= 9 && docType === 1) {
     documentType.value = 5 // NIT
   }
+})
+
+// Bloqueo físico en teclado de caracteres no numéricos en la casilla NIT/CI (si es CI o NIT)
+const onNitCiKeypress = (e) => {
+  if ([1, 5].includes(documentType.value)) {
+    if (!/^\d$/.test(e.key)) {
+      e.preventDefault()
+    }
+  }
+}
+
+// Aplicar o quitar descuento individual a un producto (normado SIN: subTotal > 0, mínimo 0.01 Bs)
+const apply100Discount = (item) => {
+  if (item.discount > 0) {
+    item.discount = 0
+    toast.showInfo(`Descuento eliminado de ${item.name}`, 'Descuento')
+  } else {
+    const gross = grossOf(item)
+    // Norma SIN (XSD minExclusive 0.0): subTotal debe ser > 0, por lo que el descuento deja un residual de Bs. 0.01
+    const maxDiscount = Number(Math.max(0, gross - 0.01).toFixed(2))
+    item.discount = maxDiscount
+    toast.showSuccess(`Descuento individual aplicado (Bs. ${item.discount}, residual normado Bs. 0.01) a ${item.name}`, 'Descuento 100% (SIN)')
+  }
+}
+
+// Importe bruto de un ítem (cantidad x precio), tope del descuento por ítem
+const grossOf = (item) => Number((Number(item.quantity || 0) * Number(item.sale_price || 0)).toFixed(2))
+
+// Descuento por ítem manual, acotado entre 0 y el importe del ítem menos 0.01 (norma XSD subTotal > 0)
+const setItemDiscount = (item, event) => {
+  let val = parseFloat(event.target.value)
+  if (isNaN(val) || val < 0) val = 0
+  const gross = grossOf(item)
+  const max = Number(Math.max(0, gross - 0.01).toFixed(2))
+  if (val > max) {
+    val = max
+    toast.showWarning(`Por norma del SIN (XSD), el subtotal del ítem debe ser mayor a 0. Descuento ajustado a Bs. ${max.toFixed(2)} (subtotal 0.01 Bs).`, 'Tope Normativo SIN')
+  }
+  item.discount = Number(val.toFixed(2))
+  event.target.value = item.discount || ''
+}
+
+// Si cambia la cantidad, el descuento nunca debe dejar el subtotal en 0
+watch(cart, (items) => {
+  items.forEach(i => {
+    const max = Number(Math.max(0, grossOf(i) - 0.01).toFixed(2))
+    if (Number(i.discount || 0) > max) i.discount = max
+  })
+}, { deep: true })
+
+// El descuento adicional global no puede superar la suma de subtotales
+watch(discount, (val) => {
+  const max = Number(subtotal.value.toFixed(2))
+  if (Number(val || 0) > max) discount.value = max
+  if (Number(val || 0) < 0) discount.value = 0
 })
 
 const addToCart = (product) => {
@@ -257,7 +345,57 @@ const clearCart = () => {
   cashTendered.value = 0
   discount.value = 0
   cardNumber.value = ''
+  splitCashAmount.value = 0
+  splitCardAmount.value = 0
+  giftCardCode.value = ''
+  giftCardAmount.value = 0
+  hasExceptionCode.value = false
 }
+
+const initSplitAmounts = () => {
+  const half = Number((total.value / 2).toFixed(2))
+  splitCashAmount.value = half
+  splitCardAmount.value = Number((total.value - half).toFixed(2))
+  cashTendered.value = splitCashAmount.value
+}
+
+const onSplitCashInput = (val) => {
+  let cash = parseFloat(val)
+  if (isNaN(cash) || cash < 0) cash = 0
+  if (cash > total.value) cash = total.value
+  splitCashAmount.value = Number(cash.toFixed(2))
+  splitCardAmount.value = Number(Math.max(0, total.value - splitCashAmount.value).toFixed(2))
+  cashTendered.value = splitCashAmount.value
+}
+
+const onSplitCardInput = (val) => {
+  let card = parseFloat(val)
+  if (isNaN(card) || card < 0) card = 0
+  if (card > total.value) card = total.value
+  splitCardAmount.value = Number(card.toFixed(2))
+  splitCashAmount.value = Number(Math.max(0, total.value - splitCardAmount.value).toFixed(2))
+  cashTendered.value = splitCashAmount.value
+}
+
+const isSplitBalanced = computed(() => {
+  const sum = Number((Number(splitCashAmount.value || 0) + Number(splitCardAmount.value || 0)).toFixed(2))
+  return Math.abs(sum - total.value) <= 0.02
+})
+
+const splitDiff = computed(() => {
+  const sum = Number((Number(splitCashAmount.value || 0) + Number(splitCardAmount.value || 0)).toFixed(2))
+  return Number((total.value - sum).toFixed(2))
+})
+
+watch(paymentMethod, (newVal) => {
+  if (newVal === 10) {
+    initSplitAmounts()
+  } else if (newVal === 27) {
+    giftCardAmount.value = total.value
+  } else if (newVal === 1) {
+    cashTendered.value = total.value
+  }
+})
 
 const openCheckoutModal = () => {
   if (cart.value.length === 0) return
@@ -265,13 +403,20 @@ const openCheckoutModal = () => {
     openCashDialog()
     return
   }
-  cashTendered.value = total.value
+  if (paymentMethod.value === 10) {
+    initSplitAmounts()
+  } else if (paymentMethod.value === 27) {
+    giftCardAmount.value = total.value
+  } else {
+    cashTendered.value = total.value
+  }
   isCheckoutModalOpen.value = true
 }
 
 const setQuickCash = (amount) => {
+  const target = paymentMethod.value === 10 ? splitCashAmount.value : total.value
   if (amount === 'exact') {
-    cashTendered.value = total.value
+    cashTendered.value = target
   } else {
     cashTendered.value = amount
   }
@@ -280,10 +425,33 @@ const setQuickCash = (amount) => {
 const checkout = async () => {
   if (cart.value.length === 0) return
 
-  // Validación SIAT de Tarjeta (Exigida por normativa cuando el método es Tarjeta)
-  if (paymentMethod.value === 2 && isInvoice.value) {
+  // 1. Validación SIAT de Tarjeta (Exigida por normativa cuando el método incluye Tarjeta: 2 = Tarjeta, 10 = Efectivo-Tarjeta)
+  if ([2, 10].includes(paymentMethod.value) && isInvoice.value) {
     if (!cardNumber.value || cardNumber.value.trim().length < 4) {
       toast.showWarning('Ingrese los 16 dígitos (o al menos los últimos 4) de la tarjeta para facturación SIAT.', 'Dato Requerido')
+      return
+    }
+  }
+
+  // 2. Validación de Pago Combinado (Código 10)
+  if (paymentMethod.value === 10) {
+    if (!isSplitBalanced.value) {
+      toast.showWarning(
+        `La suma de Efectivo (Bs. ${splitCashAmount.value.toFixed(2)}) y Tarjeta (Bs. ${splitCardAmount.value.toFixed(2)}) debe coincidir con el total de Bs. ${total.value.toFixed(2)}.`,
+        'Diferencia en Montos'
+      )
+      return
+    }
+    if (splitCashAmount.value <= 0 || splitCardAmount.value <= 0) {
+      toast.showWarning('En el pago combinado, tanto el monto en Efectivo como en Tarjeta deben ser mayores a 0.', 'Montos Requeridos')
+      return
+    }
+  }
+
+  // 3. Validación de Gift Card (Código 27)
+  if (paymentMethod.value === 27) {
+    if (!giftCardCode.value || giftCardCode.value.trim().length === 0) {
+      toast.showWarning('Ingrese el código o identificador de la Gift Card / Vale.', 'Dato Requerido')
       return
     }
   }
@@ -312,12 +480,18 @@ const checkout = async () => {
     customer_email: isInvoice.value ? (customerEmail.value || null) : null,
     sale_date: fullSaleDate,
     total_amount: total.value,
-    cash_tendered: paymentMethod.value === 1 ? (cashTendered.value || total.value) : total.value,
-    change: paymentMethod.value === 1 ? change.value : 0,
+    cash_tendered: paymentMethod.value === 1 
+      ? (cashTendered.value || total.value) 
+      : (paymentMethod.value === 10 ? (cashTendered.value || splitCashAmount.value) : total.value),
+    change: [1, 10].includes(paymentMethod.value) ? change.value : 0,
     payment_method_code: paymentMethod.value,
     document_type_code: isInvoice.value ? finalDocType : 1,
-    card_number: paymentMethod.value === 2 ? cardNumber.value : null,
+    card_number: [2, 10].includes(paymentMethod.value) ? cardNumber.value : null,
+    card_amount: paymentMethod.value === 10 ? Number(splitCardAmount.value || 0) : (paymentMethod.value === 2 ? Number(total.value || 0) : 0),
+    gift_card_amount: paymentMethod.value === 27 ? Number(giftCardAmount.value || total.value) : 0,
+    gift_card_code: paymentMethod.value === 27 ? giftCardCode.value : null,
     discount_amount: Number(discount.value || 0),
+    exception_code: (isInvoice.value && hasExceptionCode.value) ? 1 : null,
     is_invoice: isInvoice.value,
     items: cart.value.map(item => ({
       product_id: item.id,
@@ -609,6 +783,30 @@ watch(searchQuery, (newVal) => {
                   <td class="text-left">
                     <div class="item-table-name" :title="item.name">{{ item.name }}</div>
                     <div class="item-table-lab">{{ item.laboratory?.name || 'GENÉRICO' }}</div>
+                    <!-- Descuento por ítem (SIAT: montoDescuento) -->
+                    <div class="d-flex align-center mt-1" style="gap: 4px;">
+                      <span class="text-caption text-warning font-weight-bold">Desc. Bs.</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        :max="grossOf(item)"
+                        :value="item.discount || ''"
+                        placeholder="0.00"
+                        class="discount-mini-input"
+                        style="width: 64px;"
+                        @change="setItemDiscount(item, $event)"
+                      />
+                      <button
+                        type="button"
+                        class="stepper-btn"
+                        style="width: auto; padding: 0 5px; font-size: 10px;"
+                        :title="item.discount > 0 ? 'Quitar descuento' : 'Aplicar descuento del 100%'"
+                        @click="apply100Discount(item)"
+                      >
+                        {{ item.discount > 0 ? 'Quitar' : '100%' }}
+                      </button>
+                    </div>
                   </td>
 
                   <!-- Stepper de Cantidad -->
@@ -750,7 +948,7 @@ watch(searchQuery, (newVal) => {
             </div>
           </div>
 
-          <!-- EFECTIVO: Paga Con + Billetes Rápidos + Cambio -->
+          <!-- 1. EFECTIVO (Código 1) -->
           <div v-if="paymentMethod === 1" class="cash-calc-box pa-3 rounded-xl mb-3 border">
             <VRow density="compact" class="align-center mb-2">
               <VCol cols="6">
@@ -804,7 +1002,111 @@ watch(searchQuery, (newVal) => {
             </div>
           </div>
 
-          <!-- TARJETA: Número de Tarjeta (Exigido por SIAT) -->
+          <!-- 2. COMBINADO: EFECTIVO + TARJETA (Código 10) -->
+          <div v-if="paymentMethod === 10" class="combined-calc-box pa-3 rounded-xl mb-3 border">
+            <div class="d-flex align-center justify-space-between mb-2">
+              <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis">
+                Desglose Combinado (Normado SIN)
+              </div>
+              <div 
+                class="text-caption px-2 py-0.5 rounded font-weight-bold"
+                :class="isSplitBalanced ? 'bg-success text-white' : 'bg-warning text-white'"
+              >
+                {{ isSplitBalanced ? '✓ Suma Exacta: Bs. ' + total.toFixed(2) : '⚠ Diferencia: Bs. ' + Math.abs(splitDiff).toFixed(2) }}
+              </div>
+            </div>
+
+            <!-- Dos Inputs: Monto Efectivo y Monto Tarjeta -->
+            <VRow density="compact" class="mb-2">
+              <VCol cols="6">
+                <VTextField 
+                  :model-value="splitCashAmount"
+                  type="number" 
+                  step="0.01"
+                  min="0"
+                  :max="total"
+                  label="Monto en Efectivo" 
+                  variant="outlined" 
+                  density="comfortable" 
+                  prefix="Bs."
+                  prepend-inner-icon="ri-money-dollar-circle-line"
+                  hide-details
+                  class="font-weight-bold"
+                  @update:model-value="onSplitCashInput"
+                />
+              </VCol>
+              <VCol cols="6">
+                <VTextField 
+                  :model-value="splitCardAmount"
+                  type="number" 
+                  step="0.01"
+                  min="0"
+                  :max="total"
+                  label="Monto en Tarjeta" 
+                  variant="outlined" 
+                  density="comfortable" 
+                  prefix="Bs."
+                  prepend-inner-icon="ri-bank-card-line"
+                  hide-details
+                  class="font-weight-bold"
+                  @update:model-value="onSplitCardInput"
+                />
+              </VCol>
+            </VRow>
+
+            <!-- Pago del Efectivo + Vuelto sobre la parte en efectivo -->
+            <VRow density="compact" class="align-center mb-2">
+              <VCol cols="6">
+                <VTextField 
+                  v-model.number="cashTendered" 
+                  type="number" 
+                  label="Cliente entrega en Efectivo" 
+                  variant="outlined" 
+                  density="comfortable" 
+                  prefix="Bs." 
+                  hide-details
+                  class="font-weight-bold"
+                />
+              </VCol>
+              <VCol cols="6">
+                <div class="change-display-box pa-2 rounded-lg border text-center" :class="change >= 0 ? 'change-ok' : 'change-err'">
+                  <div class="text-caption font-weight-bold text-uppercase">
+                    {{ change >= 0 ? 'Cambio / Vuelto' : 'Falta en Efectivo' }}
+                  </div>
+                  <div class="text-h6 font-weight-black">
+                    Bs. {{ Math.abs(change).toFixed(2) }}
+                  </div>
+                </div>
+              </VCol>
+            </VRow>
+
+            <!-- Billetes Rápidos para la parte de Efectivo -->
+            <div class="d-flex align-center gap-1 flex-wrap mb-3">
+              <span class="text-caption font-weight-bold text-medium-emphasis me-1">Billetes:</span>
+              <VBtn size="x-small" variant="outlined" color="secondary" class="font-weight-bold" @click="setQuickCash('exact')">
+                Exacto (Bs. {{ splitCashAmount }})
+              </VBtn>
+              <VBtn v-for="amt in quickCashAmounts" :key="amt" size="x-small" variant="outlined" color="primary" class="font-weight-bold" @click="setQuickCash(amt)">
+                Bs. {{ amt }}
+              </VBtn>
+            </div>
+
+            <!-- Número de Tarjeta (Requerido por SIAT para la parte en tarjeta) -->
+            <VTextField 
+              v-model="cardNumber" 
+              label="Número o Últimos 4 Dígitos de Tarjeta" 
+              placeholder="Ej. 4567 o 4567000000001234"
+              variant="outlined" 
+              density="comfortable" 
+              prepend-inner-icon="ri-bank-card-line"
+              hide-details
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              El SIAT enmascara automáticamente los dígitos centrales por seguridad bancaria.
+            </div>
+          </div>
+
+          <!-- 3. TARJETA PURA (Código 2) -->
           <div v-if="paymentMethod === 2" class="card-info-box pa-3 rounded-xl mb-3 border">
             <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-2">
               Datos de Tarjeta (SIAT Crédito / Débito)
@@ -820,6 +1122,63 @@ watch(searchQuery, (newVal) => {
             />
             <div class="text-caption text-medium-emphasis mt-1">
               El SIAT enmascara automáticamente los dígitos centrales por seguridad bancaria.
+            </div>
+          </div>
+
+          <!-- 4. QR / TRANSFERENCIA BANCARIA (Código 7) -->
+          <div v-if="paymentMethod === 7" class="qr-info-box pa-3 rounded-xl mb-3 border">
+            <div class="d-flex align-center text-primary mb-1">
+              <VIcon icon="ri-qr-code-line" size="22" class="me-2" />
+              <span class="text-subtitle-2 font-weight-bold">Transferencia Bancaria / QR Digital</span>
+            </div>
+            <div class="text-caption text-medium-emphasis">
+              Asegúrese de verificar el abono o comprobante de transferencia bancaria antes de finalizar la venta.
+            </div>
+          </div>
+
+          <!-- 5. GIFT CARD / VALE (Código 27) -->
+          <div v-if="paymentMethod === 27" class="gift-card-box pa-3 rounded-xl mb-3 border">
+            <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-2">
+              Pago con Tarjeta de Regalo / Vale (Gift Card)
+            </div>
+            <VRow density="compact" class="mb-2">
+              <VCol cols="7">
+                <VTextField 
+                  v-model="giftCardCode" 
+                  label="Código / N° de Gift Card" 
+                  placeholder="Ej. GC-2026-9481"
+                  variant="outlined" 
+                  density="comfortable" 
+                  prepend-inner-icon="ri-gift-line"
+                  hide-details
+                />
+              </VCol>
+              <VCol cols="5">
+                <VTextField 
+                  v-model.number="giftCardAmount" 
+                  type="number" 
+                  step="0.01"
+                  label="Monto Cubierto (Bs.)" 
+                  variant="outlined" 
+                  density="comfortable" 
+                  prefix="Bs." 
+                  hide-details
+                />
+              </VCol>
+            </VRow>
+            <div class="text-caption text-medium-emphasis">
+              Por norma del SIN, el pago con Gift Card permite registrar la factura sin requerir pago adicional en efectivo al comprador (monto a pagar 0 Bs).
+            </div>
+          </div>
+
+          <!-- 6. PAGO POSTERIOR / VENTA A CRÉDITO (Código 35) -->
+          <div v-if="paymentMethod === 35" class="post-pay-box pa-3 rounded-xl mb-3 border">
+            <div class="d-flex align-center text-primary mb-1">
+              <VIcon icon="ri-calendar-schedule-line" size="22" class="me-2" />
+              <span class="text-subtitle-2 font-weight-bold">Modalidad: Pago Posterior (Venta a Crédito)</span>
+            </div>
+            <div class="text-caption text-medium-emphasis">
+              La factura se emite bajo la modalidad de cobro a plazo / posterior. No se genera ingreso de efectivo físico inmediato en la caja del turno.
             </div>
           </div>
 
@@ -844,6 +1203,9 @@ watch(searchQuery, (newVal) => {
                     </VChip>
                     <VChip size="small" variant="tonal" color="secondary" prepend-icon="ri-shopping-basket-line" style="cursor: pointer;" @click="setFiscalPreset('menores')">
                       Ventas Menores (99003)
+                    </VChip>
+                    <VChip size="small" variant="tonal" color="warning" prepend-icon="ri-global-line" style="cursor: pointer;" @click="setFiscalPreset('especial')">
+                      Casos Especiales (99001)
                     </VChip>
                     <VChip size="small" variant="tonal" color="primary" prepend-icon="ri-user-line" style="cursor: pointer;" @click="setFiscalPreset('ci')">
                       Con Cédula (CI)
@@ -875,6 +1237,7 @@ watch(searchQuery, (newVal) => {
                     density="compact" 
                     :disabled="!isInvoice"
                     hide-details
+                    @keypress="onNitCiKeypress"
                   />
                 </VCol>
 
@@ -916,6 +1279,22 @@ watch(searchQuery, (newVal) => {
                     :disabled="!isInvoice"
                     hide-details
                   />
+                </VCol>
+
+                <!-- Código de Excepción (Art. 39 RND 102100000011) -->
+                <VCol cols="12" class="pt-1">
+                  <div class="d-flex align-center justify-space-between px-3 py-2 rounded-lg bg-amber-lighten-5 border border-warning border-opacity-25">
+                    <div class="d-flex align-center me-2">
+                      <VIcon icon="ri-shield-keyhole-line" size="20" color="warning" class="me-2 flex-shrink-0" />
+                      <div>
+                        <div class="text-caption font-weight-bold text-high-emphasis lh-tight">Código de Excepción (Excepción Tributaria = 1)</div>
+                        <div class="text-caption text-medium-emphasis" style="font-size: 11px !important; line-height: 1.2;">
+                          Activar si el NIT no figura o fue observado en el Padrón del SIN (Art. 39 RND 102100000011)
+                        </div>
+                      </div>
+                    </div>
+                    <VSwitch v-model="hasExceptionCode" color="warning" density="compact" hide-details inset :disabled="!isInvoice" />
+                  </div>
                 </VCol>
               </VRow>
             </div>
@@ -1359,12 +1738,12 @@ watch(searchQuery, (newVal) => {
 }
 
 .modal-payment-grid {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
 .modal-payment-tile {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1422,6 +1801,10 @@ watch(searchQuery, (newVal) => {
 }
 
 .cash-calc-box,
+.combined-calc-box,
+.gift-card-box,
+.post-pay-box,
+.qr-info-box,
 .fiscal-settings-box,
 .card-info-box {
   background-color: rgba(var(--v-theme-on-surface), 0.03);

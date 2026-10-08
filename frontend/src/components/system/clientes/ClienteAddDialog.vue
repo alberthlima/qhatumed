@@ -25,7 +25,62 @@ const documentTypes = [
 const isLoading = ref(false)
 const toast = useMaterializeToast()
 
+// Validación y restricción en tiempo real de cuadros numéricos
+watch([document_number, document_type], ([newNum, docType]) => {
+  if (!newNum) return
+
+  // Tipos 1 (CI) y 5 (NIT) son estrictamente numéricos (norma SIN)
+  if ([1, 5].includes(docType) && /[^\d]/.test(String(newNum))) {
+    document_number.value = String(newNum).replace(/\D/g, '')
+    toast.showWarning('El Número de Documento es estrictamente numérico para CI y NIT. Se filtraron las letras.', 'Restricción Numérica (SIN)')
+    return
+  }
+
+  // Auto-detectar NIT si tiene 9 o más dígitos y está en CI
+  if (String(newNum).length >= 9 && docType === 1) {
+    document_type.value = 5 // NIT
+  }
+})
+
+// Teléfono: estrictamente numérico
+watch(phone, (newPhone) => {
+  if (!newPhone) return
+  if (/[^\d+]/.test(String(newPhone))) {
+    phone.value = String(newPhone).replace(/[^\d+]/g, '')
+    toast.showWarning('El campo Celular / WhatsApp solo admite caracteres numéricos.', 'Restricción Numérica')
+  }
+})
+
+// Bloqueo físico en teclado al escribir letras en cuadros numéricos
+const onDocNumberKeypress = (e) => {
+  if ([1, 5].includes(document_type.value)) {
+    if (!/^\d$/.test(e.key)) {
+      e.preventDefault()
+    }
+  }
+}
+
+const onPhoneKeypress = (e) => {
+  if (!/^\d$/.test(e.key) && !(e.key === '+' && (!phone.value || phone.value.length === 0))) {
+    e.preventDefault()
+  }
+}
+
+const docNumberValidator = (val) => {
+  if (!val) return true
+  if ([1, 5].includes(document_type.value) && /[^\d]/.test(String(val))) {
+    return 'Formato inválido: solo se admiten números para CI o NIT.'
+  }
+  return true
+}
+
 const store = async() => {
+  // Validación previa de formato numérico
+  if ([1, 5].includes(document_type.value) && /[^\d]/.test(String(document_number.value || ''))) {
+    toast.showError('El Número de Documento solo puede contener números para CI o NIT.', 'Restricción de Formato')
+    return
+  }
+
   let formData = new URLSearchParams()
   formData.append('document_type', document_type.value)
   formData.append('document_number', document_number.value)
@@ -87,10 +142,22 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
               />
             </VCol>
             <VCol cols="12" md="5">
-              <VTextField v-model="document_number" label="Número de Documento *" placeholder="Ej: 83749321" :rules="[requiredValidator]" />
+              <VTextField 
+                v-model="document_number" 
+                label="Número de Documento *" 
+                placeholder="Ej: 83749321" 
+                :rules="[requiredValidator, docNumberValidator]"
+                @keypress="onDocNumberKeypress"
+              />
             </VCol>
             <VCol cols="12" md="3">
-              <VTextField v-model="complement" label="Complemento" placeholder="Ej: 1E (Opcional)" />
+              <VTextField 
+                v-model="complement" 
+                label="Complemento" 
+                placeholder="Ej: 1E (Opcional)" 
+                maxlength="5"
+                @input="complement = (complement || '').toUpperCase()"
+              />
             </VCol>
 
             <VCol cols="12">
@@ -98,7 +165,12 @@ const dialogVisibleUpdate = val => emit('update:isDialogVisible', val)
             </VCol>
             
             <VCol cols="12" md="6">
-              <VTextField v-model="phone" label="Celular / WhatsApp" placeholder="Ej: 71122334" />
+              <VTextField 
+                v-model="phone" 
+                label="Celular / WhatsApp" 
+                placeholder="Ej: 71122334" 
+                @keypress="onPhoneKeypress"
+              />
             </VCol>
             <VCol cols="12" md="6">
               <VTextField v-model="email" label="Correo Electrónico (Factura)" placeholder="cliente@email.com" :rules="[val => !val || emailValidator(val)]" />

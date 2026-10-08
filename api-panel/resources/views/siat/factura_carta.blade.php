@@ -85,10 +85,30 @@
             <td class="bold">CÓD. CLIENTE:</td>
             <td>{{ $sale->customer_id ?? $sale->nit_ci ?? '0' }}</td>
         </tr>
-        @if($sale->payment_method_code == 2 || !empty($sale->card_number))
+        @if($sale->payment_method_code == 10)
+        <tr>
+            <td class="bold">MEDIO DE PAGO:</td>
+            <td colspan="3">COMBINADO (EFECTIVO: Bs. {{ number_format(max(0, $sale->total_amount - ($sale->card_amount ?? 0)), 2) }} / TARJETA: Bs. {{ number_format($sale->card_amount ?? 0, 2) }} - N°: {{ $sale->card_number ?? 'XXXX00000000XXXX' }})</td>
+        </tr>
+        @elseif($sale->payment_method_code == 2 || !empty($sale->card_number))
         <tr>
             <td class="bold">MEDIO DE PAGO:</td>
             <td colspan="3">TARJETA - N°: {{ $sale->card_number ?? 'XXXX00000000XXXX' }}</td>
+        </tr>
+        @elseif($sale->payment_method_code == 7)
+        <tr>
+            <td class="bold">MEDIO DE PAGO:</td>
+            <td colspan="3">QR / TRANSFERENCIA BANCARIA</td>
+        </tr>
+        @elseif($sale->payment_method_code == 27)
+        <tr>
+            <td class="bold">MEDIO DE PAGO:</td>
+            <td colspan="3">GIFT CARD (VALE DE COMPRA){{ $sale->gift_card_code ? ' - N°: ' . $sale->gift_card_code : '' }}</td>
+        </tr>
+        @elseif($sale->payment_method_code == 35)
+        <tr>
+            <td class="bold">MEDIO DE PAGO:</td>
+            <td colspan="3">PAGO POSTERIOR (VENTA A CRÉDITO)</td>
         </tr>
         @endif
     </table>
@@ -115,16 +135,18 @@
             @endforeach
         </tbody>
         <tfoot>
-            @if(($sale->discount ?? 0) > 0)
+            @php
+                $grossSubtotal = $sale->items->sum(fn($i) => (float) $i->quantity * (float) $i->unit_price);
+                $totalDiscount = (float) $sale->items->sum('discount') + (float) ($sale->additional_discount ?? 0);
+            @endphp
             <tr>
                 <td colspan="4" class="text-right bold">SUBTOTAL Bs.</td>
-                <td class="text-right bold">{{ number_format($sale->total_amount + $sale->discount, 2) }}</td>
+                <td class="text-right bold">{{ number_format($grossSubtotal, 2) }}</td>
             </tr>
             <tr>
                 <td colspan="4" class="text-right bold">DESCUENTO Bs.</td>
-                <td class="text-right bold">{{ number_format($sale->discount, 2) }}</td>
+                <td class="text-right bold">{{ number_format($totalDiscount, 2) }}</td>
             </tr>
-            @endif
             <tr>
                 <td colspan="4" class="text-right bold">TOTAL Bs.</td>
                 <td class="text-right bold">{{ number_format($sale->total_amount, 2) }}</td>

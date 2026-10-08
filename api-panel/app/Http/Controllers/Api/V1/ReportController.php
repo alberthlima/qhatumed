@@ -120,12 +120,15 @@ class ReportController extends Controller
 
                 $query->orderBy('sale_date', 'asc')->chunk(200, function($sales) use ($file) {
                     foreach ($sales as $sale) {
-                        $paymentMethod = 'Efectivo';
-                        if ($sale->payment_method_code == 2) {
-                            $paymentMethod = 'Tarjeta';
-                        } elseif ($sale->payment_method_code != 1) {
-                            $paymentMethod = 'QR/Transferencia';
-                        }
+                        $methodMap = [
+                            1  => 'Efectivo',
+                            2  => 'Tarjeta',
+                            10 => 'Combinado (Efectivo+Tarjeta)',
+                            7  => 'QR/Transferencia',
+                            27 => 'Gift Card',
+                            35 => 'Pago Posterior (Crédito)',
+                        ];
+                        $paymentMethod = $methodMap[$sale->payment_method_code] ?? 'Otro';
                         
                         fputcsv($file, [
                             $sale->id,

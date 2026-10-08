@@ -5,6 +5,7 @@ namespace App\Http\Controllers\System;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class CustomerController extends Controller
 {
@@ -31,12 +32,22 @@ class CustomerController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type_document_id' => 'nullable|integer',
-            'document_number' => 'nullable|string|max:50',
+            // Tipos 1 (CI) y 5 (NIT) son estrictamente numéricos conforme a normativa del SIN
+            'document_number' => [
+                'nullable', 'string', 'max:50',
+                Rule::when(
+                    in_array((int) $request->input('type_document_id', 1), [1, 5], true),
+                    ['regex:/^\d+$/']
+                ),
+            ],
             'complement' => 'nullable|string|max:10',
-            'phone' => 'nullable|string|max:25',
+            'phone' => ['nullable', 'string', 'max:25', 'regex:/^(\+)?\d+$/'],
             'address' => 'nullable|string|max:200',
             'email' => 'nullable|string|max:100',
             'status' => 'boolean'
+        ], [
+            'document_number.regex' => 'El campo Número de Documento es estrictamente numérico para documentos tipo CI o NIT.',
+            'phone.regex' => 'El campo Celular / WhatsApp debe contener únicamente dígitos numéricos.',
         ]);
 
         $item = \App\Models\Customer::create($validated);
@@ -61,12 +72,22 @@ class CustomerController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type_document_id' => 'nullable|integer',
-            'document_number' => 'nullable|string|max:50',
+            // Tipos 1 (CI) y 5 (NIT) son estrictamente numéricos conforme a normativa del SIN
+            'document_number' => [
+                'nullable', 'string', 'max:50',
+                Rule::when(
+                    in_array((int) $request->input('type_document_id', 1), [1, 5], true),
+                    ['regex:/^\d+$/']
+                ),
+            ],
             'complement' => 'nullable|string|max:10',
-            'phone' => 'nullable|string|max:25',
+            'phone' => ['nullable', 'string', 'max:25', 'regex:/^(\+)?\d+$/'],
             'address' => 'nullable|string|max:200',
             'email' => 'nullable|string|max:100',
             'status' => 'boolean'
+        ], [
+            'document_number.regex' => 'El campo Número de Documento es estrictamente numérico para documentos tipo CI o NIT.',
+            'phone.regex' => 'El campo Celular / WhatsApp debe contener únicamente dígitos numéricos.',
         ]);
 
         $customer->update($validated);
