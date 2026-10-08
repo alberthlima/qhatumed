@@ -219,6 +219,31 @@ const openAnnulDialog = (sale) => {
   }
 }
 
+// Control de Restricción de Plazos de Anulación (RND 102100000011 Art. 45)
+const getAnnulDeadline = (saleDate) => {
+  if (!saleDate) return null
+  const d = new Date(saleDate)
+  // Límite: día 10 del mes siguiente a las 23:59:59
+  return new Date(d.getFullYear(), d.getMonth() + 1, 10, 23, 59, 59)
+}
+
+const isAnnulExpired = computed(() => {
+  if (!selectedSale.value?.sale_date) return false
+  const deadline = getAnnulDeadline(selectedSale.value.sale_date)
+  if (!deadline) return false
+  return new Date() > deadline
+})
+
+const annulDeadlineFormatted = computed(() => {
+  if (!selectedSale.value?.sale_date) return ''
+  const deadline = getAnnulDeadline(selectedSale.value.sale_date)
+  if (!deadline) return ''
+  const day = String(deadline.getDate()).padStart(2, '0')
+  const month = String(deadline.getMonth() + 1).padStart(2, '0')
+  const year = deadline.getFullYear()
+  return `${day}/${month}/${year}`
+})
+
 const confirmAnnul = async () => {
   if (!selectedSale.value) return
   
@@ -586,6 +611,32 @@ onMounted(() => {
             Está a punto de anular la factura <strong>Nro {{ selectedSale?.invoice_number }}</strong> de la venta ID #{{ selectedSale?.id }}.
           </div>
 
+          <!-- Alerta de Restricción Normativa Art. 45 -->
+          <VAlert 
+            v-if="isAnnulExpired" 
+            type="error" 
+            variant="tonal" 
+            density="compact" 
+            class="text-caption mb-4 text-start"
+          >
+            <strong>Restricción Normativa (RND 102100000011 Art. 45):</strong><br>
+            El plazo reglamentario para anular esta factura venció el <strong>{{ annulDeadlineFormatted }}</strong> (día 10 del mes siguiente al de emisión).
+            <div class="mt-1 font-weight-bold text-error">
+              No es posible anular documentos fiscales fuera de plazo por disposición del Servicio de Impuestos Nacionales.
+            </div>
+          </VAlert>
+
+          <VAlert 
+            v-else-if="selectedSale?.cuf" 
+            type="info" 
+            variant="tonal" 
+            density="compact" 
+            class="text-caption mb-4 text-start"
+          >
+            <strong>Plazo Normativo Vigente (Art. 45):</strong><br>
+            Esta factura puede anularse legalmente ante el SIN hasta el <strong>{{ annulDeadlineFormatted }} 23:59</strong>.
+          </VAlert>
+
           <VSelect
             v-model="annulReason"
             :items="annulReasons"
@@ -593,6 +644,7 @@ onMounted(() => {
             variant="outlined"
             density="comfortable"
             class="mt-2 text-left"
+            :disabled="isAnnulExpired"
           />
 
           <div class="d-flex flex-wrap justify-center gap-4 mt-6">
@@ -600,7 +652,7 @@ onMounted(() => {
               color="error" 
               class="px-8"
               :loading="isLoading" 
-              :disabled="isLoading"
+              :disabled="isLoading || isAnnulExpired"
               @click="confirmAnnul"
             >
               <VIcon start icon="ri-checkbox-circle-line" />

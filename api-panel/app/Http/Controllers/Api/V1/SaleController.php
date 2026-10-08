@@ -64,7 +64,7 @@ class SaleController extends Controller
     public function annul(Request $request, Sale $sale)
     {
         $request->validate([
-            'reason_code' => 'required|integer'
+            'reason_code' => 'required|integer|in:1,2,3,4'
         ]);
 
         try {
