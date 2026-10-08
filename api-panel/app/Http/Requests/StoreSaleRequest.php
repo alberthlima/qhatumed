@@ -46,6 +46,8 @@ class StoreSaleRequest extends FormRequest
             'document_type_code'  => 'sometimes|integer',
             'exception_code'      => 'nullable|integer|in:0,1',
             'is_invoice'          => 'sometimes|boolean',
+            'is_offline'          => 'nullable|boolean',
+            'codigo_emision'      => 'nullable|integer|in:1,2,3',
             
             // Allow backdating sales
             'sale_date'           => 'nullable|date',

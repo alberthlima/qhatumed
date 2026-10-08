@@ -73,6 +73,7 @@ const giftCardAmount = ref(0)
 const paymentMethod = ref(1) // 1: Efectivo, 2: Tarjeta, 10: Combinado, 7: QR, 27: Gift Card, 35: Pago Posterior
 const documentType = ref(5)   // 5: NIT (Normado para 99002 Control Tributario)
 const hasExceptionCode = ref(false) // Código de Excepción (1 = NIT no registrado/observado en padrón SIN)
+const isOfflineMode = ref(false)     // Modo Contingencia Fuera de Línea (RND 102100000011)
 const isAddClientDialog = ref(false)
 
 // Tipos de Documento SIAT
@@ -493,6 +494,8 @@ const checkout = async () => {
     discount_amount: Number(discount.value || 0),
     exception_code: (isInvoice.value && hasExceptionCode.value) ? 1 : null,
     is_invoice: isInvoice.value,
+    is_offline: isInvoice.value && isOfflineMode.value,
+    codigo_emision: (isInvoice.value && isOfflineMode.value) ? 2 : 1,
     items: cart.value.map(item => ({
       product_id: item.id,
       quantity: item.quantity,
@@ -1192,6 +1195,28 @@ watch(searchQuery, (newVal) => {
               <VSwitch v-model="isInvoice" color="primary" density="compact" hide-details inset />
             </div>
 
+            <!-- Switch de Contingencia / Fuera de Línea (RND 102100000011) -->
+            <div v-if="isInvoice" class="mt-2 pt-2 border-t d-flex align-center justify-space-between">
+              <div class="d-flex align-center">
+                <VIcon icon="ri-wifi-off-line" :color="isOfflineMode ? 'error' : 'medium-emphasis'" size="16" class="me-1" />
+                <span class="text-caption font-weight-medium" :class="isOfflineMode ? 'text-error font-weight-bold' : ''">
+                  Modo Contingencia (Fuera de Línea)
+                </span>
+              </div>
+              <VSwitch v-model="isOfflineMode" color="error" density="compact" hide-details inset />
+            </div>
+
+            <VAlert
+              v-if="isInvoice && isOfflineMode"
+              type="error"
+              variant="tonal"
+              density="compact"
+              class="mt-2 text-caption pa-2"
+              icon="ri-information-line"
+            >
+              <strong>Facturación Fuera de Línea activa:</strong> Se generará el CUF con Código Emisión 2 y la 3ra leyenda oficial de contingencia. La factura quedará encolada para transmisión en paquete (.tar.gz).
+            </VAlert>
+
             <!-- Campos Fiscales SIAT (Habilitados si es Factura, Deshabilitados si es Recibo) -->
             <div :class="{ 'opacity-50 pointer-events-none': !isInvoice }">
               <VRow density="compact" class="mt-1">
@@ -1375,6 +1400,11 @@ watch(searchQuery, (newVal) => {
           </div>
           <div v-if="saleResult.invoice_number" class="text-subtitle-2 text-primary font-weight-bold">
             Factura N° {{ saleResult.invoice_number }}
+          </div>
+          <div v-if="saleResult.codigo_emision === 2 || saleResult.estado_siat === 'OFFLINE_PENDIENTE'" class="mt-2">
+            <VChip color="error" size="small" class="font-weight-bold" prepend-icon="ri-wifi-off-line">
+              MODALIDAD: FUERA DE LÍNEA (CONTINGENCIA)
+            </VChip>
           </div>
         </VCardTitle>
         

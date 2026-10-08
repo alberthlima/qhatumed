@@ -110,6 +110,9 @@
     <div class="tax-header">
         <strong>NIT:</strong> {{ $config['nit'] ?? '6789406016' }}<br>
         <strong>FACTURA N°:</strong> {{ $sale->invoice_number }}<br>
+        @if(($sale->codigo_emision ?? 1) == 2)
+            <div style="font-size: 8px; font-weight: bold; border: 1px dashed #000; padding: 2px; margin: 3px 0;">(FUERA DE LÍNEA - CONTINGENCIA)</div>
+        @endif
         <div class="cuf-title">CÓD. AUTORIZACIÓN (CUF):</div>
         <div class="cuf-code">{{ $sale->cuf }}</div>
     </div>

@@ -61,7 +61,7 @@ class SiatInvoiceService
      * @return Sale
      * @throws \Exception
      */
-    public function prepareAndEmit(Sale $sale): Sale
+    public function prepareAndEmit(Sale $sale, bool $forceOffline = false): Sale
     {
         $sale->loadMissing(['items.product', 'customer']);
 
@@ -112,6 +112,8 @@ class SiatInvoiceService
             ]);
         }
 
+        $codigoEmision = $forceOffline ? 2 : (int) ($sale->codigo_emision ?? 1);
+
         $payload = [
             'codigo_sucursal'                 => (int) ($this->config['sucursal'] ?? 0),
             'codigo_punto_venta'              => (int) ($this->config['punto_venta'] ?? 0),
@@ -128,6 +130,8 @@ class SiatInvoiceService
             'monto_total'                     => (float) $sale->total_amount,
             'descuento_adicional'             => round((float) ($sale->additional_discount ?? 0), 2),
             'codigo_excepcion'                => !empty($sale->exception_code) ? (int) $sale->exception_code : null,
+            'codigo_emision'                  => $codigoEmision,
+            'is_offline'                      => ($codigoEmision === 2),
             'items'                           => $itemsPayload,
         ];
 
@@ -140,7 +144,7 @@ class SiatInvoiceService
             $body = $response->body();
             if (!$response->successful() || !$response->json('success')) {
                 if (strpos($body, '936') !== false || strpos($body, 'YA SE ENCUENTRA ANULADA') !== false) {
-                    return true; // Ya está anulada en el SIN
+                    return $sale; // Ya está anulada en el SIN
                 }
                 $error = $response->json('error') ?? $response->body();
                 $this->logError("Error emitiendo factura para Venta #{$sale->id}: {$error}");
@@ -148,15 +152,18 @@ class SiatInvoiceService
             }
 
             $data = $response->json('data') ?? [];
+            $retEmision = (int) ($data['codigo_emision'] ?? $codigoEmision);
 
             $sale->update([
-                'cuf'         => $data['cuf'] ?? null,
-                'cufd'        => $data['cufd'] ?? null,
-                'siat_uid'    => $data['codigo_recepcion'] ?? null,
-                'invoice_url' => $data['qr'] ?? null,
-                'leyenda'     => $data['leyenda'] ?? null,
-                'card_number' => $data['numero_tarjeta'] ?? $sale->card_number,
-                'status'      => 'COMPLETED',
+                'cuf'            => $data['cuf'] ?? null,
+                'cufd'           => $data['cufd'] ?? null,
+                'siat_uid'       => $data['codigo_recepcion'] ?? null,
+                'invoice_url'    => $data['qr'] ?? null,
+                'leyenda'        => $data['leyenda'] ?? null,
+                'card_number'    => $data['numero_tarjeta'] ?? $sale->card_number,
+                'codigo_emision' => $retEmision,
+                'estado_siat'    => $retEmision === 2 ? 'OFFLINE_PENDIENTE' : 'ONLINE_VALIDADA',
+                'status'         => 'COMPLETED',
             ]);
 
             return $sale;
@@ -204,6 +211,106 @@ class SiatInvoiceService
 
         } catch (\Throwable $e) {
             $this->logError("Excepción al anular factura CUF {$sale->cuf}: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Registra un Evento Significativo de Contingencia ante el SIN (RND 102100000011).
+     */
+    public function registrarEventoContingencia(
+        int $motivo,
+        string $descripcion,
+        string $fechaInicio,
+        string $fechaFin,
+        int $sucursal = 0,
+        int $puntoVenta = 0
+    ): array {
+        try {
+            $response = Http::withHeaders([
+                'X-API-KEY' => $this->apiKey,
+                'Accept'    => 'application/json',
+            ])->timeout($this->timeout)->post("{$this->apiUrl}/contingencias/eventos", [
+                'codigo_motivo'      => $motivo,
+                'descripcion'        => $descripcion,
+                'fecha_inicio'       => $fechaInicio,
+                'fecha_fin'          => $fechaFin,
+                'codigo_sucursal'    => $sucursal,
+                'codigo_punto_venta' => $puntoVenta,
+            ]);
+
+            if ($response->successful() && $response->json('success')) {
+                return $response->json();
+            }
+
+            $error = $response->json('error') ?? $response->body();
+            throw new \Exception("SIAT rechazó el registro del evento: {$error}");
+        } catch (\Throwable $e) {
+            $this->logError("Error al registrar evento de contingencia: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Empaqueta (.tar.gz), envía y valida el paquete de facturas offline ante el SIN.
+     */
+    public function transmitirPaqueteContingencia(
+        string $codigoEvento,
+        array $cufs,
+        int $sucursal = 0,
+        int $puntoVenta = 0,
+        ?string $cafc = null
+    ): array {
+        try {
+            $response = Http::withHeaders([
+                'X-API-KEY' => $this->apiKey,
+                'Accept'    => 'application/json',
+            ])->timeout(60)->post("{$this->apiUrl}/contingencias/paquetes", [
+                'codigo_evento'      => $codigoEvento,
+                'cufs'               => $cufs,
+                'codigo_sucursal'    => $sucursal,
+                'codigo_punto_venta' => $puntoVenta,
+                'cafc'               => $cafc,
+            ]);
+
+            if ($response->successful() && $response->json('success')) {
+                return $response->json();
+            }
+
+            $error = $response->json('error') ?? $response->body();
+            throw new \Exception("SIAT rechazó la transmisión del paquete: {$error}");
+        } catch (\Throwable $e) {
+            $this->logError("Error al transmitir paquete de contingencia: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Valida el estado de recepción del paquete ante el SIN.
+     */
+    public function validarPaqueteContingencia(
+        string $codigoRecepcion,
+        int $sucursal = 0,
+        int $puntoVenta = 0
+    ): array {
+        try {
+            $response = Http::withHeaders([
+                'X-API-KEY' => $this->apiKey,
+                'Accept'    => 'application/json',
+            ])->timeout($this->timeout)->post("{$this->apiUrl}/contingencias/paquetes/validar", [
+                'codigo_recepcion'   => $codigoRecepcion,
+                'codigo_sucursal'    => $sucursal,
+                'codigo_punto_venta' => $puntoVenta,
+            ]);
+
+            if ($response->successful() && $response->json('success')) {
+                return $response->json('data') ?? [];
+            }
+
+            $error = $response->json('error') ?? $response->body();
+            throw new \Exception("Error al consultar validación del paquete: {$error}");
+        } catch (\Throwable $e) {
+            $this->logError("Error al validar paquete: " . $e->getMessage());
             throw $e;
         }
     }

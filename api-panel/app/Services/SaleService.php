@@ -55,6 +55,8 @@ class SaleService
                 'document_type_code'  => in_array(trim((string) ($data['nit_ci'] ?? '')), ['99001', '99002', '99003'], true) ? 5 : ($data['document_type_code'] ?? 1),
                 'exception_code'      => isset($data['exception_code']) && (int) $data['exception_code'] > 0 ? (int) $data['exception_code'] : null,
                 'is_invoice'          => $data['is_invoice'] ?? true,
+                'codigo_emision'      => (int) ($data['codigo_emision'] ?? (!empty($data['is_offline']) ? 2 : 1)),
+                'estado_siat'         => (!empty($data['is_offline']) || (int) ($data['codigo_emision'] ?? 1) === 2) ? 'OFFLINE_PENDIENTE' : 'ONLINE_VALIDADA',
                 
                 'total_amount'   => 0, // Calculated below
                 'cash_tendered'  => $data['cash_tendered'] ?? 0,
@@ -128,7 +130,20 @@ class SaleService
 
             // 3. SIAT FACTURACIÓN (Si está habilitado)
             if ($sale->is_invoice) {
-                $this->siatService->prepareAndEmit($sale);
+                $isOfflineRequested = ((int) $sale->codigo_emision === 2) || !empty($data['is_offline']);
+                if ($isOfflineRequested) {
+                    $this->siatService->prepareAndEmit($sale, forceOffline: true);
+                } else {
+                    try {
+                        $this->siatService->prepareAndEmit($sale, forceOffline: false);
+                    } catch (\Throwable $e) {
+                        // Respaldo de Contingencia Automática (RND 102100000011 Art. 29-33):
+                        // Ante corte de internet o indisponibilidad del servicio web del SIN,
+                        // no interrumpir la venta en mostrador; emitir en contingencia fuera de línea.
+                        \Illuminate\Support\Facades\Log::warning("Falla al conectar con SIAT en línea para Venta #{$sale->id}. Activando emisión en contingencia (Fuera de Línea): " . $e->getMessage());
+                        $this->siatService->prepareAndEmit($sale, forceOffline: true);
+                    }
+                }
             } else {
                 $sale->update(['status' => 'COMPLETED']);
             }

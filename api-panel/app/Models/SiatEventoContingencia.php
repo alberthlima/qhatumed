@@ -11,4 +11,9 @@ class SiatEventoContingencia extends Model
 
     protected $table = 'siat_eventos_contingencia';
     protected $guarded = [];
+
+    public function sales()
+    {
+        return $this->hasMany(Sale::class, 'evento_contingencia_id');
+    }
 }

@@ -10,6 +10,8 @@ const isLoading = ref(false)
 const totalItems = ref(0)
 const itemsPerPage = ref(10)
 const currentPage = ref(1)
+const offlinePendingCount = ref(0)
+const offlinePendingTotal = ref(0)
 
 // --- Estados de Carga por Evento (Transmisión) ---
 const transmittingIds = ref(new Set())
@@ -39,8 +41,10 @@ const fetchEventos = async () => {
   isLoading.value = true
   try {
     const response = await $api(`/v1/siat/contingencias?page=${currentPage.value}&per_page=${itemsPerPage.value}`)
-    eventosList.value = response.data || response.data?.data || response || []
-    totalItems.value = response.total || response.data?.total || eventosList.value.length
+    eventosList.value = response.eventos?.data || response.data || []
+    totalItems.value = response.eventos?.total || response.total || eventosList.value.length
+    offlinePendingCount.value = response.offline_pending_count || 0
+    offlinePendingTotal.value = response.offline_pending_total || 0
   } catch (error) {
     console.error('Error fetching contingency events:', error)
     toast.showError('No se pudo cargar el historial de contingencias', 'Error')
@@ -135,6 +139,35 @@ definePage({ meta: { permission: 'all' } })
         </VBtn>
       </VCol>
     </VRow>
+
+    <!-- Banner de Facturas Offline Pendientes de Transmisión -->
+    <VAlert
+      v-if="offlinePendingCount > 0"
+      type="warning"
+      variant="tonal"
+      class="mb-4 rounded-xl border border-warning"
+      icon="ri-time-line"
+    >
+      <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+        <div>
+          <div class="text-subtitle-1 font-weight-bold">
+            Hay {{ offlinePendingCount }} factura(s) emitida(s) fuera de línea pendientes de envío al SIN
+          </div>
+          <div class="text-body-2">
+            Monto total acumulado en contingencia: <strong>Bs. {{ Number(offlinePendingTotal).toFixed(2) }}</strong>. Debe registrar un Evento Significativo y transmitir el paquete dentro del plazo reglamentario de 48 horas (RND 102100000011).
+          </div>
+        </div>
+        <VBtn
+          color="warning"
+          variant="flat"
+          class="font-weight-bold"
+          @click="isAddDialog = true"
+        >
+          <VIcon start icon="ri-upload-cloud-line" />
+          Registrar y Transmitir
+        </VBtn>
+      </div>
+    </VAlert>
 
     <!-- Historial de Contingencias -->
     <VCard class="rounded-xl border" elevation="0">

@@ -12,17 +12,19 @@ class Sale extends Model
         'cuf', 'cufd', 'siat_uid', 'invoice_url', 'leyenda',
         'total_amount', 'additional_discount', 'cash_tendered', 'change', 'status',
         'payment_method_code', 'card_number', 'card_amount', 'gift_card_amount', 'gift_card_code',
-        'document_type_code', 'exception_code', 'is_invoice'
+        'document_type_code', 'exception_code', 'is_invoice',
+        'codigo_emision', 'estado_siat', 'evento_contingencia_id'
     ];
 
     protected $casts = [
-        'sale_date'    => 'datetime',
-        'is_invoice'   => 'boolean',
-        'exception_code' => 'integer',
-        'total_amount' => 'decimal:2',
-        'additional_discount' => 'decimal:2',
-        'card_amount' => 'decimal:2',
-        'gift_card_amount' => 'decimal:2',
+        'sale_date'            => 'datetime',
+        'is_invoice'           => 'boolean',
+        'exception_code'       => 'integer',
+        'codigo_emision'       => 'integer',
+        'total_amount'         => 'decimal:2',
+        'additional_discount'  => 'decimal:2',
+        'card_amount'          => 'decimal:2',
+        'gift_card_amount'     => 'decimal:2',
     ];
 
     public function customer()
@@ -38,5 +40,10 @@ class Sale extends Model
     public function items()
     {
         return $this->hasMany(SaleItem::class);
+    }
+
+    public function eventoContingencia()
+    {
+        return $this->belongsTo(SiatEventoContingencia::class, 'evento_contingencia_id');
     }
 }
