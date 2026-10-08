@@ -219,6 +219,72 @@ class SiatInvoiceService
     }
 
     /**
+     * Revierte la anulación de una factura en el SIAT mediante siat-api-service.
+     *
+     * @param Sale $sale
+     * @return bool
+     * @throws \Exception
+     */
+    public function revertInvoice(Sale $sale): bool
+    {
+        if (empty($sale->cuf)) {
+            throw new \Exception("La venta no cuenta con CUF asignado para revertir su anulación.");
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'X-API-KEY' => $this->apiKey,
+                'Accept'    => 'application/json',
+            ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/revertir-anulacion", [
+                'cuf' => $sale->cuf,
+            ]);
+
+            $body = $response->body();
+            if (!$response->successful() || !$response->json('success')) {
+                $error = $response->json('error') ?? $response->body();
+                $this->logError("Error revirtiendo anulación de factura CUF {$sale->cuf}: {$error}");
+                throw new \Exception("Error revirtiendo anulación en SIAT: " . $error);
+            }
+
+            return true;
+
+        } catch (\Throwable $e) {
+            $this->logError("Excepción al revertir anulación de factura CUF {$sale->cuf}: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Consulta el estado de una factura directamente en los servidores del SIN.
+     *
+     * @param string $cuf
+     * @return array
+     * @throws \Exception
+     */
+    public function verificarEstadoFactura(string $cuf): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'X-API-KEY' => $this->apiKey,
+                'Accept'    => 'application/json',
+            ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/verificar-estado", [
+                'cuf' => $cuf,
+            ]);
+
+            if ($response->successful() && $response->json('success')) {
+                return $response->json('data') ?? [];
+            }
+
+            $error = $response->json('error') ?? $response->body();
+            throw new \Exception("SIAT error al verificar estado: " . $error);
+
+        } catch (\Throwable $e) {
+            $this->logError("Excepción al verificar estado de factura CUF {$cuf}: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
      * Registra un Evento Significativo de Contingencia ante el SIN (RND 102100000011).
      */
     public function registrarEventoContingencia(

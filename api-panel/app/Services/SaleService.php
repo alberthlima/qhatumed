@@ -301,13 +301,93 @@ class SaleService
                 }
             }
 
-            $sale->update(['status' => 'ANNULLED']);
+            $updateData = ['status' => 'ANNULLED'];
+            if ($sale->is_invoice) {
+                $updateData['estado_siat'] = 'ANULADA';
+            }
+            $sale->update($updateData);
             
             // Delete associated cash movement
             \App\Models\CashMovement::where('reference_id', $sale->id)
                 ->where('reference_type', \App\Models\Sale::class)
                 ->delete();
             
+            return $sale;
+        });
+    }
+
+    /**
+     * Revierte la anulación de una venta/factura:
+     * - Revierte la anulación en el SIAT ante el SIN (reversionAnulacionFactura - RND 102100000011)
+     * - Re-descuenta el stock físico de productos y lotes
+     * - Restaura el movimiento de caja en la sesión abierta del usuario
+     * - Cambia el estado de la venta nuevamente a COMPLETED
+     */
+    public function revertSale(Sale $sale)
+    {
+        if ($sale->status !== 'ANNULLED') {
+            throw new \Exception("Solo se puede revertir una venta que se encuentre anulada.");
+        }
+
+        // Validación de Plazo de Reversión (RND 102100000011 Art. 45)
+        if ($sale->sale_date) {
+            $fechaEmision = \Carbon\Carbon::parse($sale->sale_date)->timezone('America/La_Paz');
+            $limiteReversion = $fechaEmision->copy()->addMonth()->startOfMonth()->addDays(9)->endOfDay();
+            if (\Carbon\Carbon::now('America/La_Paz')->greaterThan($limiteReversion)) {
+                $fEmit = $fechaEmision->format('d/m/Y');
+                $fLim = $limiteReversion->format('d/m/Y');
+                throw new \Exception("Plazo de reversión vencido. Según normativa RND 102100000011 Art. 45, la factura fue emitida el {$fEmit} y el plazo máximo venció el {$fLim}.");
+            }
+        }
+
+        // 1. Si es factura con CUF, revertir en SIAT primero
+        if ($sale->is_invoice && !empty($sale->cuf)) {
+            $this->siatService->revertInvoice($sale);
+        }
+
+        return DB::transaction(function () use ($sale) {
+            // 2. Verificar y volver a descontar el stock
+            foreach ($sale->items as $item) {
+                $product = \App\Models\Product::lockForUpdate()->findOrFail($item->product_id);
+                if ($product->stock < $item->quantity) {
+                    throw new \Exception("Stock insuficiente para revertir la venta del producto: {$product->name}. Stock actual: {$product->stock}");
+                }
+
+                $product->decrement('stock', $item->quantity);
+
+                if ($item->purchase_item_id) {
+                    $purchaseItem = $item->purchaseItem()->lockForUpdate()->first();
+                    if ($purchaseItem) {
+                        $purchaseItem->decrement('current_stock', $item->quantity);
+                    }
+                }
+            }
+
+            $updateData = ['status' => 'COMPLETED'];
+            if ($sale->is_invoice) {
+                $updateData['estado_siat'] = ((int)$sale->codigo_emision === 2) ? 'OFFLINE_PENDIENTE' : 'ONLINE_VALIDADA';
+            }
+            $sale->update($updateData);
+
+            // 3. Restaurar movimiento de caja si hay turno abierto
+            $openSession = \App\Models\CashRegisterSession::where('user_id', $sale->user_id)
+                ->where('status', 'OPEN')
+                ->first();
+
+            if ($openSession) {
+                $saleNum = $sale->invoice_number ?: $sale->id;
+                \App\Models\CashMovement::create([
+                    'cash_register_session_id' => $openSession->id,
+                    'user_id'                  => $sale->user_id,
+                    'type'                     => 'IN',
+                    'amount'                   => $sale->total_amount,
+                    'payment_method'           => (int)$sale->payment_method_code === 2 ? 'TARJETA' : 'EFECTIVO',
+                    'description'              => "Venta #{$saleNum} (Reversión de Anulación)",
+                    'reference_id'             => $sale->id,
+                    'reference_type'           => \App\Models\Sale::class
+                ]);
+            }
+
             return $sale;
         });
     }

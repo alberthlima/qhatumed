@@ -259,6 +259,57 @@ const confirmSimpleAnnul = async () => {
   }
 }
 
+// Reversión de Anulación (RND 102100000011 Art. 45)
+const isRevertDialog = ref(false)
+const selectedRevertSale = ref(null)
+const isReverting = ref(false)
+
+const openRevertDialog = (sale) => {
+  selectedRevertSale.value = sale
+  isRevertDialog.value = true
+}
+
+const confirmRevert = async () => {
+  if (!selectedRevertSale.value) return
+  isReverting.value = true
+  try {
+    const res = await $api(`/v1/sales/${selectedRevertSale.value.id}/revert`, {
+      method: 'POST'
+    })
+    isRevertDialog.value = false
+    fetchSales()
+    toast.showSuccess(res.message || 'Anulación revertida exitosamente. La factura vuelve a estado VALIDADA.', 'Reversión Exitosa')
+  } catch (error) {
+    const msg = error.response?._data?.error || 'Error al revertir la anulación'
+    toast.showError(msg, 'Error en Reversión')
+  } finally {
+    isReverting.value = false
+  }
+}
+
+// Verificación de Estado SIAT
+const isVerifyDialog = ref(false)
+const verifyData = ref(null)
+const isVerifying = ref(false)
+
+const verificarEstadoSiat = async (sale) => {
+  isVerifying.value = true
+  try {
+    const res = await $api(`/v1/sales/${sale.id}/verificar-siat`, {
+      method: 'POST'
+    })
+    verifyData.value = {
+      sale,
+      siat: res.data || res
+    }
+    isVerifyDialog.value = true
+  } catch (error) {
+    const msg = error.response?._data?.error || 'Error al verificar con SIAT'
+    toast.showError(msg, 'Verificación SIAT')
+  } finally {
+    isVerifying.value = false
+  }
+}
 onMounted(() => {
   fetchSales()
   fetchCustomersList()
@@ -495,6 +546,26 @@ onMounted(() => {
             @click="openAnnulDialog(item)"
             :title="item.cuf ? 'Anular Factura SIAT' : 'Anular Recibo'"
           />
+          <!-- Revertir Anulación (RND 102100000011 Art. 45) -->
+          <VBtn
+            v-if="item.status === 'ANNULLED'"
+            icon="ri-restart-line"
+            variant="tonal"
+            color="warning"
+            size="small"
+            @click="openRevertDialog(item)"
+            :title="item.cuf ? 'Revertir Anulación en SIAT' : 'Reactivar Recibo'"
+          />
+          <!-- Verificar Estado SIAT -->
+          <VBtn
+            v-if="item.cuf"
+            icon="ri-shield-check-line"
+            variant="tonal"
+            color="secondary"
+            size="small"
+            @click="verificarEstadoSiat(item)"
+            title="Verificar Estado en SIAT"
+          />
         </div>
       </template>
     </VDataTable>
@@ -508,7 +579,7 @@ onMounted(() => {
           <div class="text-center pb-6">
             <VIcon icon="ri-error-warning-line" color="error" size="48" class="mb-3"/>
             <h4 class="text-h4 font-weight-bold mb-2">Anular Factura SIAT</h4>
-            <p class="text-body-2 text-medium-emphasis">Esta acción es irreversible ante el Servicio de Impuestos Nacionales.</p>
+            <p class="text-body-2 text-medium-emphasis">Envía solicitud anulacionFactura ante el SIN (RND 102100000011 Art. 44).</p>
           </div>
           
           <div class="text-body-1 mb-4">
@@ -547,6 +618,95 @@ onMounted(() => {
             </VBtn>
           </div>
         </VCardText>
+      </VCard>
+    </VDialog>
+
+    <!-- MODAL REVERSIÓN DE ANULACIÓN (RND 102100000011 Art. 45) -->
+    <VDialog v-model="isRevertDialog" max-width="550">
+      <VCard class="pa-sm-8 pa-4 text-center rounded-xl">
+        <DialogCloseBtn variant="text" size="default" @click="isRevertDialog = false" />
+        <VCardText class="pt-2">
+          <div class="text-center pb-4">
+            <VIcon icon="ri-restart-line" color="warning" size="48" class="mb-2"/>
+            <h4 class="text-h5 font-weight-bold mb-1">Revertir Anulación de Factura</h4>
+            <p class="text-body-2 text-medium-emphasis">Servicio de Impuestos Nacionales (RND 102100000011 Art. 45)</p>
+          </div>
+          
+          <VAlert type="warning" variant="tonal" density="compact" class="text-caption mb-4 text-start">
+            <strong>Atención:</strong> Esta operación enviará una solicitud SOAP <code>reversionAnulacionFactura</code> ante el SIN para restablecer la factura a estado <strong>VALIDADA</strong> y restaurará la deducción de inventario.
+          </VAlert>
+
+          <div class="text-body-1 mb-4" v-if="selectedRevertSale">
+            ¿Confirmar la reversión de anulación para la Factura <strong>Nro {{ selectedRevertSale.invoice_number }}</strong> (Venta #{{ selectedRevertSale.id }})?
+          </div>
+
+          <div class="d-flex flex-wrap justify-center gap-4 mt-6">
+            <VBtn 
+              color="warning" 
+              class="px-8 font-weight-bold"
+              :loading="isReverting" 
+              :disabled="isReverting"
+              @click="confirmRevert"
+            >
+              <VIcon start icon="ri-check-line" />
+              Revertir Anulación en SIN
+            </VBtn>
+
+            <VBtn 
+              color="secondary"
+              class="px-8 font-weight-bold"
+              :disabled="isReverting" 
+              @click="isRevertDialog = false"
+            >
+              Cancelar
+            </VBtn>
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
+    <!-- MODAL VERIFICAR ESTADO EN SIAT -->
+    <VDialog v-model="isVerifyDialog" max-width="500">
+      <VCard class="pa-4 rounded-xl" v-if="verifyData">
+        <DialogCloseBtn variant="text" size="default" @click="isVerifyDialog = false" />
+        <VCardTitle class="d-flex align-center gap-2">
+          <VIcon icon="ri-shield-check-line" color="primary" />
+          <span class="text-h6 font-weight-bold">Estado Fiscal en Impuestos (SIN)</span>
+        </VCardTitle>
+        <VCardText class="pt-2">
+          <div class="mb-3">
+            <div class="text-caption text-medium-emphasis">Factura / CUF:</div>
+            <code class="text-caption font-weight-bold text-break">{{ verifyData.sale.cuf }}</code>
+          </div>
+
+          <VList density="compact" class="border rounded-lg">
+            <VListItem>
+              <template #title>Estado en Base de Datos Local</template>
+              <template #append>
+                <VChip size="small" :color="verifyData.sale.status === 'COMPLETED' ? 'success' : 'error'" class="font-weight-bold">
+                  {{ verifyData.sale.status }}
+                </VChip>
+              </template>
+            </VListItem>
+            <VListItem>
+              <template #title>Código Estado SIN</template>
+              <template #append>
+                <code class="font-weight-bold">{{ verifyData.siat?.codigoEstado || verifyData.siat?.codigoRecepcion || '908' }}</code>
+              </template>
+            </VListItem>
+            <VListItem>
+              <template #title>Descripción Estado SIN</template>
+              <template #append>
+                <span class="font-weight-bold text-success">
+                  {{ verifyData.siat?.codigoDescripcion || (verifyData.sale.status === 'COMPLETED' ? 'VALIDADA' : 'ANULADA') }}
+                </span>
+              </template>
+            </VListItem>
+          </VList>
+        </VCardText>
+        <VCardActions class="justify-end">
+          <VBtn color="primary" @click="isVerifyDialog = false">Cerrar</VBtn>
+        </VCardActions>
       </VCard>
     </VDialog>
 

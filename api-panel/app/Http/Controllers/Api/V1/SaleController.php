@@ -81,18 +81,47 @@ class SaleController extends Controller
                 }
             }
 
-            // Si la venta tiene factura SIAT, anular primero en el SIN
-            if ($sale->cuf) {
-                $siat = app(SiatInvoiceService::class);
-                $siat->annulInvoice($sale, $request->reason_code);
-            }
-
-            $this->saleService->annulSale($sale);
+            $this->saleService->annulSale($sale, (int) ($request->reason_code ?? 1));
             
             return response()->json(['message' => 'Venta y Factura anuladas correctamente.']);
         } catch (\Exception $e) {
             Log::error("Error anulación: " . $e->getMessage());
             return response()->json(['error' => 'No se pudo anular: ' . $e->getMessage()], 422);
+        }
+    }
+
+    public function revert(Request $request, Sale $sale)
+    {
+        try {
+            $this->saleService->revertSale($sale);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Anulación revertida exitosamente. La venta y factura retornaron a estado ACTIVA/VALIDADA.',
+                'data'    => new SaleResource($sale->fresh()->load(['items.product', 'customer', 'user']))
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Error reversión: " . $e->getMessage());
+            return response()->json(['error' => 'No se pudo revertir la anulación: ' . $e->getMessage()], 422);
+        }
+    }
+
+    public function verificarSiat(Sale $sale)
+    {
+        if (!$sale->cuf) {
+            return response()->json(['error' => 'La venta no cuenta con CUF asignado.'], 404);
+        }
+
+        try {
+            $siat = app(SiatInvoiceService::class);
+            $estado = $siat->verificarEstadoFactura($sale->cuf);
+
+            return response()->json([
+                'success' => true,
+                'data'    => $estado
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Error al verificar con SIAT: ' . $e->getMessage()], 500);
         }
     }
 
