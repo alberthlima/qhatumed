@@ -54,6 +54,7 @@ class SiatContingenciaController extends Controller
             'descripcion'   => 'required|string|max:255',
             'fecha_inicio'  => 'required|string',
             'fecha_fin'     => 'required|string',
+            'cafc'          => 'nullable|string|max:50',
         ]);
 
         $codigoRecepcion = null;
@@ -88,6 +89,7 @@ class SiatContingenciaController extends Controller
             'fecha_inicio'            => Carbon::parse($validated['fecha_inicio']),
             'fecha_fin'               => Carbon::parse($validated['fecha_fin']),
             'codigo_recepcion_evento' => $codigoRecepcion,
+            'cafc'                    => !empty($validated['cafc']) ? trim($validated['cafc']) : null,
             'estado_transmision'      => 'PENDIENTE',
             'detalles_error'          => $detallesError,
         ]);
@@ -102,7 +104,7 @@ class SiatContingenciaController extends Controller
     /**
      * Transmite el paquete de facturas emitidas fuera de línea durante la contingencia (.tar.gz).
      */
-    public function transmitir($id)
+    public function transmitir($id, Request $request)
     {
         $evento = SiatEventoContingencia::findOrFail($id);
 
@@ -119,11 +121,17 @@ class SiatContingenciaController extends Controller
         $codigoPaquete = null;
         $detallesError = null;
 
+        // Determinar CAFC para el paquete (si aplica por motivo 1, 5, 6 o ventas manuales)
+        $cafc = $request->input('cafc')
+            ?: $evento->cafc
+            ?: $offlineSales->pluck('cafc')->filter()->first();
+
         if (!empty($cufs)) {
             try {
                 $transRes = $this->siatService->transmitirPaqueteContingencia(
                     codigoEvento: (string) $evento->codigo_recepcion_evento,
-                    cufs: $cufs
+                    cufs: $cufs,
+                    cafc: $cafc
                 );
 
                 $codigoPaquete = $transRes['codigo_recepcion_paquete'] ?? (string) rand(20000000, 89999999);
@@ -152,14 +160,16 @@ class SiatContingenciaController extends Controller
 
         $evento->update([
             'codigo_recepcion_paquete' => $codigoPaquete,
-            'estado_transmision'      => 'VALIDADO',
-            'detalles_error'          => $detallesError,
+            'cafc'                     => $cafc,
+            'estado_transmision'       => 'VALIDADO',
+            'detalles_error'           => $detallesError,
         ]);
 
         return response()->json([
             'success'            => true,
             'message'            => 'Facturas empaquetadas (.tar.gz), enviadas y validadas correctamente ante el SIN.',
             'cantidad_facturas'  => count($cufs),
+            'cafc'               => $cafc,
             'data'               => $evento->fresh()
         ]);
     }

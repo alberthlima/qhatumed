@@ -48,6 +48,8 @@ class StoreSaleRequest extends FormRequest
             'is_invoice'          => 'sometimes|boolean',
             'is_offline'          => 'nullable|boolean',
             'codigo_emision'      => 'nullable|integer|in:1,2,3',
+            'cafc'                => 'nullable|string|max:50',
+            'invoice_number'      => 'nullable|integer|min:1',
             
             // Allow backdating sales
             'sale_date'           => 'nullable|date',

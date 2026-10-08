@@ -23,7 +23,8 @@ const form = ref({
   codigo_motivo: 2, // 2: Falla de internet por defecto
   descripcion: '',
   fecha_inicio: '',
-  fecha_fin: ''
+  fecha_fin: '',
+  cafc: ''
 })
 
 const motivosEvento = [
@@ -63,6 +64,10 @@ const saveEvento = async () => {
     return toast.showWarning('La fecha de fin debe ser posterior a la fecha de inicio', 'Fechas Inválidas')
   }
 
+  if ([1, 5, 6].includes(Number(form.value.codigo_motivo)) && !form.value.cafc?.trim()) {
+    return toast.showWarning('Para eventos con talonario manual (motivos 1, 5 y 6), debe ingresar el Código CAFC', 'CAFC Requerido')
+  }
+
   isSaving.value = true
   try {
     const res = await $api('/v1/siat/contingencias', {
@@ -71,7 +76,7 @@ const saveEvento = async () => {
     })
     toast.showSuccess(res.message || 'Evento registrado en Impuestos exitosamente', 'Registro Exitoso')
     isAddDialog.value = false
-    form.value = { codigo_motivo: 2, descripcion: '', fecha_inicio: '', fecha_fin: '' }
+    form.value = { codigo_motivo: 2, descripcion: '', fecha_inicio: '', fecha_fin: '', cafc: '' }
     await fetchEventos()
   } catch (error) {
     console.error('Error saving contingency event:', error)
@@ -85,7 +90,10 @@ const saveEvento = async () => {
 const transmitirFacturas = async (evento) => {
   transmittingIds.value.add(evento.id)
   try {
-    const res = await $api(`/v1/siat/contingencias/${evento.id}/transmitir`, { method: 'POST' })
+    const res = await $api(`/v1/siat/contingencias/${evento.id}/transmitir`, {
+      method: 'POST',
+      body: { cafc: evento.cafc || null }
+    })
     toast.showSuccess(res.message || 'Facturas empaquetadas, enviadas y validadas correctamente', 'Transmisión Exitosa')
     await fetchEventos()
   } catch (error) {
@@ -180,6 +188,7 @@ definePage({ meta: { permission: 'all' } })
         :headers="[
           { title: 'ID', key: 'id' },
           { title: 'Motivo del Evento (SIN)', key: 'codigo_motivo' },
+          { title: 'CAFC', key: 'cafc', align: 'center' },
           { title: 'Inicio', key: 'fecha_inicio' },
           { title: 'Fin', key: 'fecha_fin' },
           { title: 'Cód. Recepción Evento', key: 'codigo_recepcion_evento' },
@@ -207,6 +216,13 @@ definePage({ meta: { permission: 'all' } })
           <span class="text-body-2 font-weight-bold text-wrap" style="max-width: 250px; display: inline-block;">
             {{ getMotivoLabel(item.codigo_motivo) }}
           </span>
+        </template>
+
+        <template #item.cafc="{ item }">
+          <VChip v-if="item.cafc" color="warning" size="small" class="font-weight-bold" prepend-icon="ri-barcode-box-line">
+            {{ item.cafc }}
+          </VChip>
+          <span v-else class="text-medium-emphasis">—</span>
         </template>
 
         <template #item.fecha_inicio="{ item }">
@@ -297,6 +313,40 @@ definePage({ meta: { permission: 'all' } })
                   label="Motivo del Evento Significativo *"
                   variant="outlined"
                   density="comfortable"
+                />
+              </VCol>
+
+              <VCol cols="12" v-if="[1, 5, 6].includes(Number(form.codigo_motivo))">
+                <VAlert
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-2 text-caption"
+                  icon="ri-information-line"
+                >
+                  <strong>Evento con Talonario Manual:</strong> Para este motivo (corte eléctrico, software o hardware) la normativa exige la consignación del <strong>Código CAFC</strong> autorizado por Impuestos.
+                </VAlert>
+                <VTextField
+                  v-model="form.cafc"
+                  label="Código CAFC (Autorización de Contingencia) *"
+                  placeholder="Ej: 1013E35BF1B5C"
+                  variant="outlined"
+                  density="comfortable"
+                  prepend-inner-icon="ri-barcode-box-line"
+                  hint="Código alfanumérico otorgado por el SIN para talonarios manuales"
+                  persistent-hint
+                />
+              </VCol>
+              <VCol cols="12" v-else>
+                <VTextField
+                  v-model="form.cafc"
+                  label="Código CAFC (Opcional)"
+                  placeholder="Ej: 1013E35BF1B5C"
+                  variant="outlined"
+                  density="comfortable"
+                  prepend-inner-icon="ri-barcode-box-line"
+                  hint="Opcional: Si el paquete fuera de línea utiliza autorización CAFC"
+                  persistent-hint
                 />
               </VCol>
               

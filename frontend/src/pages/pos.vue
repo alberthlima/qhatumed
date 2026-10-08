@@ -74,6 +74,8 @@ const paymentMethod = ref(1) // 1: Efectivo, 2: Tarjeta, 10: Combinado, 7: QR, 2
 const documentType = ref(5)   // 5: NIT (Normado para 99002 Control Tributario)
 const hasExceptionCode = ref(false) // Código de Excepción (1 = NIT no registrado/observado en padrón SIN)
 const isOfflineMode = ref(false)     // Modo Contingencia Fuera de Línea (RND 102100000011)
+const manualCafc = ref('')           // Código CAFC (Talonario preimpreso o contingencia)
+const manualInvoiceNumber = ref('')  // N° Factura manual del talonario
 const isAddClientDialog = ref(false)
 
 // Tipos de Documento SIAT
@@ -351,6 +353,9 @@ const clearCart = () => {
   giftCardCode.value = ''
   giftCardAmount.value = 0
   hasExceptionCode.value = false
+  isOfflineMode.value = false
+  manualCafc.value = ''
+  manualInvoiceNumber.value = ''
 }
 
 const initSplitAmounts = () => {
@@ -496,6 +501,8 @@ const checkout = async () => {
     is_invoice: isInvoice.value,
     is_offline: isInvoice.value && isOfflineMode.value,
     codigo_emision: (isInvoice.value && isOfflineMode.value) ? 2 : 1,
+    cafc: (isInvoice.value && isOfflineMode.value && manualCafc.value) ? manualCafc.value.trim() : null,
+    invoice_number: (isInvoice.value && isOfflineMode.value && manualInvoiceNumber.value) ? Number(manualInvoiceNumber.value) : null,
     items: cart.value.map(item => ({
       product_id: item.id,
       quantity: item.quantity,
@@ -1217,6 +1224,37 @@ watch(searchQuery, (newVal) => {
               <strong>Facturación Fuera de Línea activa:</strong> Se generará el CUF con Código Emisión 2 y la 3ra leyenda oficial de contingencia. La factura quedará encolada para transmisión en paquete (.tar.gz).
             </VAlert>
 
+            <!-- Opciones de Talonario Manual con CAFC (RND 102100000011) -->
+            <VRow v-if="isInvoice && isOfflineMode" density="compact" class="mt-2">
+              <VCol cols="12" sm="7">
+                <VTextField
+                  v-model="manualCafc"
+                  label="Código CAFC (Talonario Manual)"
+                  placeholder="Ej: 1013E35BF1B5C"
+                  variant="outlined"
+                  density="compact"
+                  clearable
+                  prepend-inner-icon="ri-barcode-box-line"
+                  hint="Opcional: Si se transcribe de talonario preimpreso"
+                  persistent-hint
+                />
+              </VCol>
+              <VCol cols="12" sm="5">
+                <VTextField
+                  v-model="manualInvoiceNumber"
+                  label="N° Factura Manual"
+                  placeholder="Ej: 154"
+                  type="number"
+                  variant="outlined"
+                  density="compact"
+                  clearable
+                  prepend-inner-icon="ri-hashtag"
+                  hint="N° físico del talonario"
+                  persistent-hint
+                />
+              </VCol>
+            </VRow>
+
             <!-- Campos Fiscales SIAT (Habilitados si es Factura, Deshabilitados si es Recibo) -->
             <div :class="{ 'opacity-50 pointer-events-none': !isInvoice }">
               <VRow density="compact" class="mt-1">
@@ -1401,9 +1439,12 @@ watch(searchQuery, (newVal) => {
           <div v-if="saleResult.invoice_number" class="text-subtitle-2 text-primary font-weight-bold">
             Factura N° {{ saleResult.invoice_number }}
           </div>
-          <div v-if="saleResult.codigo_emision === 2 || saleResult.estado_siat === 'OFFLINE_PENDIENTE'" class="mt-2">
+          <div v-if="saleResult.codigo_emision === 2 || saleResult.estado_siat === 'OFFLINE_PENDIENTE'" class="mt-2 d-flex flex-column align-center gap-1">
             <VChip color="error" size="small" class="font-weight-bold" prepend-icon="ri-wifi-off-line">
               MODALIDAD: FUERA DE LÍNEA (CONTINGENCIA)
+            </VChip>
+            <VChip v-if="saleResult.cafc" color="warning" size="small" class="font-weight-bold mt-1" prepend-icon="ri-barcode-box-line">
+              CAFC: {{ saleResult.cafc }}
             </VChip>
           </div>
         </VCardTitle>

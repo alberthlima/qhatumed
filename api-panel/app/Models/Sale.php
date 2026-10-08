@@ -13,7 +13,7 @@ class Sale extends Model
         'total_amount', 'additional_discount', 'cash_tendered', 'change', 'status',
         'payment_method_code', 'card_number', 'card_amount', 'gift_card_amount', 'gift_card_code',
         'document_type_code', 'exception_code', 'is_invoice',
-        'codigo_emision', 'estado_siat', 'evento_contingencia_id'
+        'codigo_emision', 'cafc', 'estado_siat', 'evento_contingencia_id'
     ];
 
     protected $casts = [

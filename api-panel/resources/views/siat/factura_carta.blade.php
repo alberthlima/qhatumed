@@ -66,6 +66,9 @@
                     @if(($sale->codigo_emision ?? 1) == 2)
                         <div style="font-size: 8.5px; font-weight: bold; color: #b71c1c; margin-bottom: 3px;">(MODALIDAD: FUERA DE LÍNEA)</div>
                     @endif
+                    @if(!empty($sale->cafc))
+                        <strong>N° CAFC:</strong> {{ $sale->cafc }}<br>
+                    @endif
                     <strong>NIT:</strong> {{ $config['nit'] ?? '6789406016' }}<br>
                     <strong>N° FACTURA:</strong> {{ $sale->invoice_number }}<br>
                     <strong>CÓD. AUTORIZACIÓN (CUF):</strong><br>

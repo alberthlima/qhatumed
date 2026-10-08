@@ -44,7 +44,7 @@ class SaleService
                 'nit_ci'         => $data['nit_ci'] ?? '0',
                 
                 // SIAT Setup
-                'invoice_number'      => null, 
+                'invoice_number'      => !empty($data['invoice_number']) ? (int) $data['invoice_number'] : null, 
                 'cuf'                 => null,
                 'cufd'                => null,
                 'payment_method_code' => (int) ($data['payment_method_code'] ?? 1),
@@ -56,6 +56,7 @@ class SaleService
                 'exception_code'      => isset($data['exception_code']) && (int) $data['exception_code'] > 0 ? (int) $data['exception_code'] : null,
                 'is_invoice'          => $data['is_invoice'] ?? true,
                 'codigo_emision'      => (int) ($data['codigo_emision'] ?? (!empty($data['is_offline']) ? 2 : 1)),
+                'cafc'                => !empty($data['cafc']) ? trim((string) $data['cafc']) : null,
                 'estado_siat'         => (!empty($data['is_offline']) || (int) ($data['codigo_emision'] ?? 1) === 2) ? 'OFFLINE_PENDIENTE' : 'ONLINE_VALIDADA',
                 
                 'total_amount'   => 0, // Calculated below

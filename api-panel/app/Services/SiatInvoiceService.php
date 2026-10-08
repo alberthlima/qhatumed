@@ -132,6 +132,8 @@ class SiatInvoiceService
             'codigo_excepcion'                => !empty($sale->exception_code) ? (int) $sale->exception_code : null,
             'codigo_emision'                  => $codigoEmision,
             'is_offline'                      => ($codigoEmision === 2),
+            'cafc'                            => !empty($sale->cafc) ? trim((string) $sale->cafc) : null,
+            'fecha_emision'                   => $sale->sale_date ? $sale->sale_date->format('Y-m-d\TH:i:s.v') : null,
             'items'                           => $itemsPayload,
         ];
 
@@ -162,6 +164,7 @@ class SiatInvoiceService
                 'leyenda'        => $data['leyenda'] ?? null,
                 'card_number'    => $data['numero_tarjeta'] ?? $sale->card_number,
                 'codigo_emision' => $retEmision,
+                'cafc'           => $data['cafc'] ?? $sale->cafc,
                 'estado_siat'    => $retEmision === 2 ? 'OFFLINE_PENDIENTE' : 'ONLINE_VALIDADA',
                 'status'         => 'COMPLETED',
             ]);

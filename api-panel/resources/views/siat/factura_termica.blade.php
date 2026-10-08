@@ -113,6 +113,9 @@
         @if(($sale->codigo_emision ?? 1) == 2)
             <div style="font-size: 8px; font-weight: bold; border: 1px dashed #000; padding: 2px; margin: 3px 0;">(FUERA DE LÍNEA - CONTINGENCIA)</div>
         @endif
+        @if(!empty($sale->cafc))
+            <div style="font-size: 8px; font-weight: bold; margin-top: 2px;">N° CAFC: {{ $sale->cafc }}</div>
+        @endif
         <div class="cuf-title">CÓD. AUTORIZACIÓN (CUF):</div>
         <div class="cuf-code">{{ $sale->cuf }}</div>
     </div>
