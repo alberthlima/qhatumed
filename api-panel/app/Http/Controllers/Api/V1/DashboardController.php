@@ -192,17 +192,24 @@ class DashboardController extends Controller
 
             // Productos con stock crítico (bajo stock mínimo)
             $stockCriticoCount = DB::table('products')
-                ->where('status', 'ACTIVE')
+                ->where(function ($q) {
+                    $q->where('status', 1)->orWhere('status', 'ACTIVE');
+                })
+                ->where('stock', '>', 0)
                 ->whereRaw('stock <= min_stock')
                 ->count();
 
             // Lista detallada de productos bajo stock mínimo (para widget rápido)
             $criticalStockProducts = DB::table('products')
-                ->where('status', 'ACTIVE')
+                ->where(function ($q) {
+                    $q->where('status', 1)->orWhere('status', 'ACTIVE');
+                })
+                ->where('stock', '>', 0)
                 ->whereRaw('stock <= min_stock')
                 ->select('id', 'name', 'stock', 'min_stock')
                 ->limit(10)
                 ->get();
+
 
             // 7. Estado de Caja Activa (para el usuario actual)
             $userId = auth()->id() ?? 1;

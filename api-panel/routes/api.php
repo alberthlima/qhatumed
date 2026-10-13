@@ -47,6 +47,12 @@ Route::group([
         Route::post('siat/contingencias', [\App\Http\Controllers\Api\V1\SiatContingenciaController::class, 'store']);
         Route::post('siat/contingencias/{id}/transmitir', [\App\Http\Controllers\Api\V1\SiatContingenciaController::class, 'transmitir']);
 
+        // Notificaciones y Alertas de Stock en Tiempo Real
+        Route::get('notifications/stock-alerts', [\App\Http\Controllers\Api\V1\NotificationController::class, 'stockAlerts']);
+        Route::post('notifications/mark-read', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markAsRead']);
+        Route::post('notifications/mark-unread', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markAsUnread']);
+
+
         // Gestión Oficial de Puntos de Venta (SIAT / SIN - RND 102100000011)
         Route::get('siat/puntos-venta', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'index']);
         Route::post('siat/puntos-venta', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'store']);

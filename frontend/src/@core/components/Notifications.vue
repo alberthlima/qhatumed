@@ -16,6 +16,21 @@ const props = defineProps({
     required: false,
     default: 'bottom end',
   },
+  title: {
+    type: String,
+    required: false,
+    default: 'Alertas de Stock',
+  },
+  emptyText: {
+    type: String,
+    required: false,
+    default: '¡Sin alertas de inventario pendientes!',
+  },
+  footerText: {
+    type: String,
+    required: false,
+    default: 'Ver Lotes y Vencimientos',
+  },
 })
 
 const emit = defineEmits([
@@ -23,6 +38,7 @@ const emit = defineEmits([
   'unread',
   'remove',
   'click:notification',
+  'click:viewAll',
 ])
 
 const isAllMarkRead = computed(() => props.notifications.some(item => item.isSeen === false))
@@ -41,13 +57,13 @@ const totalUnreadNotifications = computed(() => props.notifications.filter(item 
 <template>
   <IconBtn id="notification-btn">
     <VBadge
-      dot
-      v-bind="props.badgeProps"
-      :model-value="props.notifications.some(n => !n.isSeen)"
+      :content="totalUnreadNotifications > 0 ? (totalUnreadNotifications > 99 ? '99+' : totalUnreadNotifications) : undefined"
+      :model-value="totalUnreadNotifications > 0"
       color="error"
       bordered
       offset-x="1"
       offset-y="1"
+      v-bind="props.badgeProps"
       class="notification-badge"
     >
       <VIcon icon="ri-notification-2-line" />
@@ -64,7 +80,7 @@ const totalUnreadNotifications = computed(() => props.notifications.filter(item 
         <!-- 👉 Header -->
         <VCardItem class="notification-section">
           <h6 class="text-h6 text-truncate">
-            Notifications
+            {{ props.title }}
           </h6>
 
           <template #append>
@@ -73,9 +89,9 @@ const totalUnreadNotifications = computed(() => props.notifications.filter(item 
               size="small"
               class="me-2"
               variant="tonal"
-              color="primary"
+              color="error"
             >
-              {{ totalUnreadNotifications }} new
+              {{ totalUnreadNotifications }} nuevas
             </VChip>
 
             <IconBtn
@@ -92,7 +108,7 @@ const totalUnreadNotifications = computed(() => props.notifications.filter(item 
                 activator="parent"
                 location="start"
               >
-                {{ !isAllMarkRead ? 'Mark all as unread' : 'Mark all as read' }}
+                {{ !isAllMarkRead ? 'Marcar todas como no leídas' : 'Marcar todas como leídas' }}
               </VTooltip>
             </IconBtn>
           </template>
@@ -187,7 +203,7 @@ const totalUnreadNotifications = computed(() => props.notifications.filter(item 
               class="text-center text-medium-emphasis"
               style="block-size: 56px;"
             >
-              <VListItemTitle>No Notification Found!</VListItemTitle>
+              <VListItemTitle>{{ props.emptyText }}</VListItemTitle>
             </VListItem>
           </VList>
         </PerfectScrollbar>
@@ -202,10 +218,14 @@ const totalUnreadNotifications = computed(() => props.notifications.filter(item 
           <VBtn
             block
             size="small"
+            color="primary"
+            variant="tonal"
+            @click="$emit('click:viewAll')"
           >
-            View All Notifications
+            {{ props.footerText }}
           </VBtn>
         </VCardText>
+
       </VCard>
     </VMenu>
   </IconBtn>
