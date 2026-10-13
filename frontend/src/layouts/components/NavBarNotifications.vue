@@ -1,6 +1,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { $api } from '@/utils/api'
+import Notifications from '@core/components/Notifications.vue'
+
 
 const router = useRouter()
 const notifications = ref([])
