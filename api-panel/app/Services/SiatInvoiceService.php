@@ -134,6 +134,8 @@ class SiatInvoiceService
             'is_offline'                      => ($codigoEmision === 2),
             'cafc'                            => !empty($sale->cafc) ? trim((string) $sale->cafc) : null,
             'fecha_emision'                   => $sale->sale_date ? $sale->sale_date->format('Y-m-d\TH:i:s.v') : null,
+            'codigo_documento_sector'         => (int) ($sale->codigo_documento_sector ?? 1),
+            'allow_offline_fallback'          => true,
             'items'                           => $itemsPayload,
         ];
 
