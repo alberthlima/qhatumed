@@ -250,10 +250,22 @@ onMounted(async () => {
                     <VCol cols="12" md="4">
                       <VTextField v-model.number="formData.siat_pos_code" label="Punto de Venta Asignado" type="number" variant="outlined" prepend-inner-icon="ri-computer-line" />
                     </VCol>
-                    <VCol cols="12" md="6">
+                    <VCol cols="12" md="4">
                       <VTextField v-model="formData.siat_system_code" label="Código de Sistema (SIN)" variant="outlined" prepend-inner-icon="ri-qr-code-line" />
                     </VCol>
-                    <VCol cols="12" md="6">
+                    <VCol cols="12" md="4">
+                      <VSelect 
+                        v-model.number="formData.siat_modality" 
+                        :items="[
+                          { title: '1 - Electrónica en Línea (Firma Digital .p12)', value: 1 },
+                          { title: '2 - Computarizada en Línea', value: 2 }
+                        ]" 
+                        label="Modalidad de Facturación *" 
+                        variant="outlined" 
+                        prepend-inner-icon="ri-shield-keyhole-line" 
+                      />
+                    </VCol>
+                    <VCol cols="12" md="4">
                       <VSelect 
                         v-model.number="formData.siat_environment" 
                         :items="[{title:'Piloto (Pruebas)', value:2}, {title:'Producción', value:1}]" 

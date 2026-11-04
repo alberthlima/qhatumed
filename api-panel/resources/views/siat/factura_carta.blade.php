@@ -144,6 +144,8 @@
             @php
                 $grossSubtotal = $sale->items->sum(fn($i) => (float) $i->quantity * (float) $i->unit_price);
                 $totalDiscount = (float) $sale->items->sum('discount') + (float) ($sale->additional_discount ?? 0);
+                $giftCardAmt   = (float) ($sale->gift_card_amount ?? 0);
+                $montoAPagar   = max(0, (float) $sale->total_amount - $giftCardAmt);
             @endphp
             <tr>
                 <td colspan="4" class="text-right bold">SUBTOTAL Bs.</td>
@@ -158,12 +160,16 @@
                 <td class="text-right bold">{{ number_format($sale->total_amount, 2) }}</td>
             </tr>
             <tr>
+                <td colspan="4" class="text-right bold">MONTO GIFT CARD Bs.</td>
+                <td class="text-right bold">{{ number_format($giftCardAmt, 2) }}</td>
+            </tr>
+            <tr>
                 <td colspan="4" class="text-right bold">MONTO A PAGAR Bs.</td>
-                <td class="text-right bold">{{ number_format($sale->total_amount, 2) }}</td>
+                <td class="text-right bold">{{ number_format($montoAPagar, 2) }}</td>
             </tr>
             <tr>
                 <td colspan="4" class="text-right" style="font-size: 9px;">IMPORTE BASE CRÉDITO FISCAL:</td>
-                <td class="text-right" style="font-size: 9px;">{{ number_format($sale->total_amount, 2) }}</td>
+                <td class="text-right" style="font-size: 9px;">{{ number_format($montoAPagar, 2) }}</td>
             </tr>
             <tr>
                 <td colspan="5" class="text-left" style="background-color: #fafafa; padding: 6px;">

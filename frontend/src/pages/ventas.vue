@@ -11,6 +11,8 @@ const searchQuery = ref('')
 const isAnnulDialog = ref(false)
 const selectedSale = ref(null)
 const annulReason = ref(1) // 1: Factura mal emitida
+const annulEmail = ref('')
+const revertEmail = ref('')
 
 const isOnlyInvoices = computed(() => route.query.type === 'invoices' || route.name === 'facturas' || route.path.includes('/facturas'))
 
@@ -212,12 +214,17 @@ const isSimpleAnnulDialog = ref(false)
 
 const openAnnulDialog = (sale) => {
   selectedSale.value = sale
+  annulEmail.value = sale.customer?.email || 'sinpruebas2@gmail.com'
   if (sale.cuf) {
     isAnnulDialog.value = true
   } else {
     isSimpleAnnulDialog.value = true
   }
 }
+
+const isAnnulReverted = computed(() => {
+  return ['REVERTIDA', 'OFFLINE_REVERTIDA'].includes(selectedSale.value?.estado_siat)
+})
 
 // Control de Restricción de Plazos de Anulación (RND 102100000011 Art. 45)
 const getAnnulDeadline = (saleDate) => {
@@ -251,12 +258,15 @@ const confirmAnnul = async () => {
     isLoading.value = true
     await $api(`/v1/sales/${selectedSale.value.id}/annul`, {
       method: 'POST',
-      body: { reason_code: annulReason.value }
+      body: {
+        reason_code: annulReason.value,
+        email: annulEmail.value || undefined
+      }
     })
     
     isAnnulDialog.value = false
     fetchSales() // Refrescar lista
-    toast.showSuccess('Factura anulada en SIAT correctamente', 'Éxito')
+    toast.showSuccess('Factura anulada en SIAT y notificación enviada por correo', 'Éxito')
   } catch (error) {
     const msg = error.response?._data?.error || 'Error al anular'
     toast.showError(msg, 'Error al Anular')
@@ -291,6 +301,7 @@ const isReverting = ref(false)
 
 const openRevertDialog = (sale) => {
   selectedRevertSale.value = sale
+  revertEmail.value = sale.customer?.email || 'sinpruebas2@gmail.com'
   isRevertDialog.value = true
 }
 
@@ -299,11 +310,14 @@ const confirmRevert = async () => {
   isReverting.value = true
   try {
     const res = await $api(`/v1/sales/${selectedRevertSale.value.id}/revert`, {
-      method: 'POST'
+      method: 'POST',
+      body: {
+        email: revertEmail.value || undefined
+      }
     })
     isRevertDialog.value = false
     fetchSales()
-    toast.showSuccess(res.message || 'Anulación revertida exitosamente. La factura vuelve a estado VALIDADA.', 'Reversión Exitosa')
+    toast.showSuccess(res.message || 'Anulación revertida exitosamente y notificada por correo.', 'Reversión Exitosa')
   } catch (error) {
     const msg = error.response?._data?.error || 'Error al revertir la anulación'
     toast.showError(msg, 'Error en Reversión')
@@ -486,14 +500,26 @@ onMounted(() => {
       </template>
 
       <template #item.status="{ item }">
-        <VChip
-          :color="item.status === 'COMPLETED' ? 'success' : 'error'"
-          size="small"
-          class="font-weight-bold"
-          variant="tonal"
-        >
-          {{ item.status === 'COMPLETED' ? 'Válida' : 'Anulada' }}
-        </VChip>
+        <div class="d-flex align-center gap-1">
+          <VChip
+            :color="item.status === 'COMPLETED' ? 'success' : 'error'"
+            size="small"
+            class="font-weight-bold"
+            variant="tonal"
+          >
+            {{ item.status === 'COMPLETED' ? 'Válida' : 'Anulada' }}
+          </VChip>
+          <VChip
+            v-if="['REVERTIDA', 'OFFLINE_REVERTIDA'].includes(item.estado_siat)"
+            color="info"
+            size="x-small"
+            variant="tonal"
+            class="font-weight-bold"
+            title="Estado 907 SIN: Revertida (No puede volver a anularse)"
+          >
+            Revertida (907)
+          </VChip>
+        </div>
       </template>
 
       <template #item.cuf="{ item }">
@@ -611,9 +637,21 @@ onMounted(() => {
             Está a punto de anular la factura <strong>Nro {{ selectedSale?.invoice_number }}</strong> de la venta ID #{{ selectedSale?.id }}.
           </div>
 
+          <!-- Alerta de Restricción Normativa Estado 907 (Revertida) -->
+          <VAlert 
+            v-if="isAnnulReverted" 
+            type="error" 
+            variant="tonal" 
+            density="compact" 
+            class="text-caption mb-4 text-start"
+          >
+            <strong>Restricción Normativa SIN (Estado 907 - Revertida):</strong><br>
+            Los Documentos Fiscales cuya anulación fue revertida <strong>no podrán volver a ser anulados</strong> en el sistema del Servicio de Impuestos Nacionales.
+          </VAlert>
+
           <!-- Alerta de Restricción Normativa Art. 45 -->
           <VAlert 
-            v-if="isAnnulExpired" 
+            v-else-if="isAnnulExpired" 
             type="error" 
             variant="tonal" 
             density="compact" 
@@ -644,7 +682,21 @@ onMounted(() => {
             variant="outlined"
             density="comfortable"
             class="mt-2 text-left"
-            :disabled="isAnnulExpired"
+            :disabled="isAnnulExpired || isAnnulReverted"
+          />
+
+          <VTextField
+            v-model="annulEmail"
+            type="email"
+            label="Correo de Notificación al Comprador (SIN)"
+            placeholder="cliente@correo.com"
+            variant="outlined"
+            density="comfortable"
+            prepend-inner-icon="ri-mail-send-line"
+            class="mt-3 text-left"
+            :disabled="isAnnulExpired || isAnnulReverted"
+            hint="Se enviará automáticamente la notificación de anulación con el PDF y XML"
+            persistent-hint
           />
 
           <div class="d-flex flex-wrap justify-center gap-4 mt-6">
@@ -652,7 +704,7 @@ onMounted(() => {
               color="error" 
               class="px-8"
               :loading="isLoading" 
-              :disabled="isLoading || isAnnulExpired"
+              :disabled="isLoading || isAnnulExpired || isAnnulReverted"
               @click="confirmAnnul"
             >
               <VIcon start icon="ri-checkbox-circle-line" />
@@ -691,6 +743,19 @@ onMounted(() => {
           <div class="text-body-1 mb-4" v-if="selectedRevertSale">
             ¿Confirmar la reversión de anulación para la Factura <strong>Nro {{ selectedRevertSale.invoice_number }}</strong> (Venta #{{ selectedRevertSale.id }})?
           </div>
+
+          <VTextField
+            v-model="revertEmail"
+            type="email"
+            label="Correo de Notificación al Comprador (SIN)"
+            placeholder="cliente@correo.com"
+            variant="outlined"
+            density="comfortable"
+            prepend-inner-icon="ri-mail-send-line"
+            class="mb-2 text-left"
+            hint="Se notificará al comprador que su factura nuevamente se encuentra VÁLIDA"
+            persistent-hint
+          />
 
           <div class="d-flex flex-wrap justify-center gap-4 mt-6">
             <VBtn 

@@ -64,10 +64,18 @@ class SaleController extends Controller
     public function annul(Request $request, Sale $sale)
     {
         $request->validate([
-            'reason_code' => 'required|integer|in:1,2,3,4'
+            'reason_code' => 'required|integer|in:1,2,3,4',
+            'email'       => 'nullable|email|max:150',
         ]);
 
         try {
+            // Regla Normativa SIN: "Los Documentos Fiscales revertidos no podrán volver a ser anulados"
+            if (in_array($sale->estado_siat, ['REVERTIDA', 'OFFLINE_REVERTIDA'], true)) {
+                return response()->json([
+                    'error' => 'Restricción Normativa SIN: Los Documentos Fiscales cuya anulación fue revertida (Estado 907 - REVERTIDA) no pueden volver a ser anulados.'
+                ], 422);
+            }
+
             // Validación de plazo normativo (RND 102100000011 Art. 45)
             if ($sale->sale_date) {
                 $fechaEmision = \Carbon\Carbon::parse($sale->sale_date)->timezone('America/La_Paz');
@@ -81,7 +89,7 @@ class SaleController extends Controller
                 }
             }
 
-            $this->saleService->annulSale($sale, (int) ($request->reason_code ?? 1));
+            $this->saleService->annulSale($sale, (int) ($request->reason_code ?? 1), $request->input('email'));
             
             return response()->json(['message' => 'Venta y Factura anuladas correctamente.']);
         } catch (\Exception $e) {
@@ -92,12 +100,16 @@ class SaleController extends Controller
 
     public function revert(Request $request, Sale $sale)
     {
+        $request->validate([
+            'email' => 'nullable|email|max:150',
+        ]);
+
         try {
-            $this->saleService->revertSale($sale);
+            $this->saleService->revertSale($sale, $request->input('email'));
 
             return response()->json([
                 'success' => true,
-                'message' => 'Anulación revertida exitosamente. La venta y factura retornaron a estado ACTIVA/VALIDADA.',
+                'message' => 'Anulación revertida exitosamente. La venta y factura retornaron a estado VÁLIDA (Estado 907 - Revertida).',
                 'data'    => new SaleResource($sale->fresh()->load(['items.product', 'customer', 'user']))
             ]);
         } catch (\Exception $e) {

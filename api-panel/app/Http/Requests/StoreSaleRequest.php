@@ -16,6 +16,8 @@ class StoreSaleRequest extends FormRequest
     {
         return [
             'customer_id' => 'nullable|exists:customers,id',
+            'customer_email' => 'nullable|email|max:150',
+            'complement' => 'nullable|string|max:10',
             'business_name' => 'required|string|max:150',
             // Tipos 1 (CI) y 5 (NIT) son estrictamente numéricos. CEX/PAS/OD pueden ser alfanuméricos.
             'nit_ci' => [

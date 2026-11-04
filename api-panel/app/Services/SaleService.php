@@ -104,14 +104,18 @@ class SaleService
 
             // Norma SIN: montoTotal = Σ subTotal - descuentoAdicional
             $additionalDiscount = round((float) ($data['discount_amount'] ?? 0), 2);
+            $isGiftCardPayment = ((int) $sale->payment_method_code === 27) || ((float) ($sale->gift_card_amount ?? 0) > 0);
             if ($additionalDiscount > $totalAmount) {
                 throw new \Exception("Descuento adicional inválido: (Bs. {$additionalDiscount}) no puede superar la suma de subtotales (Bs. " . number_format($totalAmount, 2) . ").");
+            }
+            if (!$isGiftCardPayment && $additionalDiscount >= $totalAmount) {
+                throw new \Exception("Descuento adicional inválido: No se permite un descuento global del 100% que deje el monto total de la factura en Bs. 0.00.");
             }
             $totalAmount = round($totalAmount - $additionalDiscount, 2);
 
             // Validación Normativa SIN: No se permite emitir facturas con importe cero o negativo,
             // salvo en pagos totales cubiertos por Gift Card (Código 27)
-            if ($totalAmount <= 0 && (int) $sale->payment_method_code !== 27) {
+            if ($totalAmount <= 0 && !$isGiftCardPayment) {
                 throw new \Exception("Monto inválido: El monto total de la venta debe ser mayor a 0. No se permite registrar ni emitir facturas con importe cero o negativo, salvo pagos cubiertos por Gift Card.");
             }
 
@@ -130,19 +134,32 @@ class SaleService
             ]);
 
             // 3. SIAT FACTURACIÓN (Si está habilitado)
+            $customerEmail = !empty($data['customer_email']) ? trim((string) $data['customer_email']) : null;
+            $complement = !empty($data['complement']) ? trim((string) $data['complement']) : null;
+
+            // Si hay un cliente asociado y nos enviaron correo o complemento nuevo, actualizar su ficha
+            if ($sale->customer_id && ($customerEmail || $complement)) {
+                $custUpdate = [];
+                if ($customerEmail) $custUpdate['email'] = $customerEmail;
+                if ($complement) $custUpdate['complement'] = $complement;
+                if (!empty($custUpdate)) {
+                    \App\Models\Customer::where('id', $sale->customer_id)->update($custUpdate);
+                }
+            }
+
             if ($sale->is_invoice) {
                 $isOfflineRequested = ((int) $sale->codigo_emision === 2) || !empty($data['is_offline']);
                 if ($isOfflineRequested) {
-                    $this->siatService->prepareAndEmit($sale, forceOffline: true);
+                    $this->siatService->prepareAndEmit($sale, forceOffline: true, customerEmail: $customerEmail, complement: $complement);
                 } else {
                     try {
-                        $this->siatService->prepareAndEmit($sale, forceOffline: false);
+                        $this->siatService->prepareAndEmit($sale, forceOffline: false, customerEmail: $customerEmail, complement: $complement);
                     } catch (\Throwable $e) {
                         // Respaldo de Contingencia Automática (RND 102100000011 Art. 29-33):
                         // Ante corte de internet o indisponibilidad del servicio web del SIN,
                         // no interrumpir la venta en mostrador; emitir en contingencia fuera de línea.
                         \Illuminate\Support\Facades\Log::warning("Falla al conectar con SIAT en línea para Venta #{$sale->id}. Activando emisión en contingencia (Fuera de Línea): " . $e->getMessage());
-                        $this->siatService->prepareAndEmit($sale, forceOffline: true);
+                        $this->siatService->prepareAndEmit($sale, forceOffline: true, customerEmail: $customerEmail, complement: $complement);
                     }
                 }
             } else {
@@ -213,6 +230,11 @@ class SaleService
                 }
             }
 
+            // 5. Envío automático de Factura (PDF + XML) al correo del comprador tras la emisión (Requisito SIN Fase II)
+            if ($sale->is_invoice && !empty($sale->cuf)) {
+                $this->siatService->sendInvoiceEmail($sale, $customerEmail, 'EMISION');
+            }
+
             return $sale->load(['items', 'customer']);
         });
     }
@@ -277,10 +299,15 @@ class SaleService
     /**
      * Annul a sale and return stock to respective batches, and annul invoice in SIAT if applicable.
      */
-    public function annulSale(Sale $sale, int $motivoAnulacion = 1)
+    public function annulSale(Sale $sale, int $motivoAnulacion = 1, ?string $notifyEmail = null)
     {
         if ($sale->status === 'ANNULLED') {
             throw new \Exception("Venta ya se encuentra anulada.");
+        }
+
+        // Regla Normativa SIN: "Los Documentos Fiscales revertidos no podrán volver a ser anulados" (Estado 907 - REVERTIDA)
+        if (in_array($sale->estado_siat, ['REVERTIDA', 'OFFLINE_REVERTIDA'], true)) {
+            throw new \Exception("Restricción Normativa SIN: Los Documentos Fiscales cuya anulación fue revertida (Estado 907 - REVERTIDA) no pueden volver a ser anulados.");
         }
 
         // 1. Si es factura electrónica, anular en SIAT primero.
@@ -288,7 +315,7 @@ class SaleService
             $this->siatService->annulInvoice($sale, $motivoAnulacion);
         }
 
-        return DB::transaction(function () use ($sale) {
+        $sale = DB::transaction(function () use ($sale) {
             foreach ($sale->items as $item) {
                 $product = $item->product;
                 
@@ -314,6 +341,20 @@ class SaleService
             
             return $sale;
         });
+
+        // Notificar por correo electrónico al comprador sobre la anulación de la factura (Requisito SIN Fase II)
+        if ($sale->is_invoice && !empty($sale->cuf)) {
+            $motivosDesc = [
+                1 => '1 - Factura mal emitida',
+                2 => '2 - Nota de crédito-débito mal emitida',
+                3 => '3 - Datos de emisión incorrectos',
+                4 => '4 - Factura o nota de crédito-débito devuelta',
+            ];
+            $motivoTexto = $motivosDesc[$motivoAnulacion] ?? "Motivo código {$motivoAnulacion}";
+            $this->siatService->sendInvoiceEmail($sale, $notifyEmail, 'ANULACION', $motivoTexto);
+        }
+
+        return $sale;
     }
 
     /**
@@ -323,7 +364,7 @@ class SaleService
      * - Restaura el movimiento de caja en la sesión abierta del usuario
      * - Cambia el estado de la venta nuevamente a COMPLETED
      */
-    public function revertSale(Sale $sale)
+    public function revertSale(Sale $sale, ?string $notifyEmail = null)
     {
         if ($sale->status !== 'ANNULLED') {
             throw new \Exception("Solo se puede revertir una venta que se encuentre anulada.");
@@ -345,7 +386,7 @@ class SaleService
             $this->siatService->revertInvoice($sale);
         }
 
-        return DB::transaction(function () use ($sale) {
+        $sale = DB::transaction(function () use ($sale) {
             // 2. Verificar y volver a descontar el stock
             foreach ($sale->items as $item) {
                 $product = \App\Models\Product::lockForUpdate()->findOrFail($item->product_id);
@@ -363,9 +404,11 @@ class SaleService
                 }
             }
 
+            // Guardamos estado_siat = 'REVERTIDA' (o 'OFFLINE_REVERTIDA') para reflejar el Estado 907 del SIN
+            // e impedir que vuelva a ser anulada por segunda vez.
             $updateData = ['status' => 'COMPLETED'];
             if ($sale->is_invoice) {
-                $updateData['estado_siat'] = ((int)$sale->codigo_emision === 2) ? 'OFFLINE_PENDIENTE' : 'ONLINE_VALIDADA';
+                $updateData['estado_siat'] = ((int)$sale->codigo_emision === 2) ? 'OFFLINE_REVERTIDA' : 'REVERTIDA';
             }
             $sale->update($updateData);
 
@@ -374,21 +417,64 @@ class SaleService
                 ->where('status', 'OPEN')
                 ->first();
 
-            if ($openSession) {
+            if ($openSession && (int)$sale->payment_method_code !== 35) {
                 $saleNum = $sale->invoice_number ?: $sale->id;
-                \App\Models\CashMovement::create([
-                    'cash_register_session_id' => $openSession->id,
-                    'user_id'                  => $sale->user_id,
-                    'type'                     => 'IN',
-                    'amount'                   => $sale->total_amount,
-                    'payment_method'           => (int)$sale->payment_method_code === 2 ? 'TARJETA' : 'EFECTIVO',
-                    'description'              => "Venta #{$saleNum} (Reversión de Anulación)",
-                    'reference_id'             => $sale->id,
-                    'reference_type'           => \App\Models\Sale::class
-                ]);
+                if ((int)$sale->payment_method_code === 10) {
+                    $cardPart = round((float)($sale->card_amount ?? 0), 2);
+                    $cashPart = round(max(0, $sale->total_amount - $cardPart), 2);
+                    if ($cashPart > 0) {
+                        \App\Models\CashMovement::create([
+                            'cash_register_session_id' => $openSession->id,
+                            'user_id'                  => $sale->user_id,
+                            'type'                     => 'IN',
+                            'amount'                   => $cashPart,
+                            'payment_method'           => 'EFECTIVO',
+                            'description'              => "Venta #{$saleNum} (Reversión Anulación - Efectivo)",
+                            'reference_id'             => $sale->id,
+                            'reference_type'           => \App\Models\Sale::class
+                        ]);
+                    }
+                    if ($cardPart > 0) {
+                        \App\Models\CashMovement::create([
+                            'cash_register_session_id' => $openSession->id,
+                            'user_id'                  => $sale->user_id,
+                            'type'                     => 'IN',
+                            'amount'                   => $cardPart,
+                            'payment_method'           => 'TARJETA',
+                            'description'              => "Venta #{$saleNum} (Reversión Anulación - Tarjeta)",
+                            'reference_id'             => $sale->id,
+                            'reference_type'           => \App\Models\Sale::class
+                        ]);
+                    }
+                } else {
+                    $methodMap = [
+                        1  => 'EFECTIVO',
+                        2  => 'TARJETA',
+                        7  => 'QR',
+                        27 => 'GIFT_CARD',
+                    ];
+                    $methodStr = $methodMap[(int)$sale->payment_method_code] ?? 'EFECTIVO';
+                    \App\Models\CashMovement::create([
+                        'cash_register_session_id' => $openSession->id,
+                        'user_id'                  => $sale->user_id,
+                        'type'                     => 'IN',
+                        'amount'                   => $sale->total_amount,
+                        'payment_method'           => $methodStr,
+                        'description'              => "Venta #{$saleNum} (Reversión de Anulación)",
+                        'reference_id'             => $sale->id,
+                        'reference_type'           => \App\Models\Sale::class
+                    ]);
+                }
             }
 
             return $sale;
         });
+
+        // Notificar por correo electrónico al comprador sobre la reversión de la anulación (Requisito SIN Fase II)
+        if ($sale->is_invoice && !empty($sale->cuf)) {
+            $this->siatService->sendInvoiceEmail($sale, $notifyEmail, 'REVERSION');
+        }
+
+        return $sale;
     }
 }

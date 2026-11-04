@@ -40,6 +40,9 @@ class SiatInvoiceService
                 if (!empty($setting->siat_pos_code)) {
                     $this->config['punto_venta'] = (int) $setting->siat_pos_code;
                 }
+                if (!empty($setting->siat_modality)) {
+                    $this->config['modalidad'] = (int) $setting->siat_modality;
+                }
                 if (!empty($setting->legal_name)) {
                     $this->config['razon_social'] = $setting->legal_name;
                 }
@@ -61,7 +64,7 @@ class SiatInvoiceService
      * @return Sale
      * @throws \Exception
      */
-    public function prepareAndEmit(Sale $sale, bool $forceOffline = false): Sale
+    public function prepareAndEmit(Sale $sale, bool $forceOffline = false, ?string $customerEmail = null, ?string $complement = null): Sale
     {
         $sale->loadMissing(['items.product', 'customer']);
 
@@ -90,8 +93,9 @@ class SiatInvoiceService
         $businessName = trim((string) ($sale->business_name ?: 'CONTROL TRIBUTARIO'));
 
         // Regla Normativa SIAT (RND 102100000011 Art. 39):
-        // 1. Códigos Especiales (99001, 99002, 99003) se deben consignar con Tipo 5 (NIT).
-        if (in_array($docNumber, ['99001', '99002', '99003'], true)) {
+        // 1. Códigos Especiales (99001, 99002, 99003) se deben consignar con Tipo 5 (NIT) y codigoExcepcion = 1.
+        $esCodigoEspecial = in_array($docNumber, ['99001', '99002', '99003'], true);
+        if ($esCodigoEspecial) {
             $docType = 5;
             if ($docNumber === '99002' && (empty($businessName) || $businessName === 'S/N')) {
                 $businessName = 'CONTROL TRIBUTARIO';
@@ -104,6 +108,7 @@ class SiatInvoiceService
             $docType = 5;
             $docNumber = '99002';
             $businessName = 'CONTROL TRIBUTARIO';
+            $esCodigoEspecial = true;
 
             $sale->update([
                 'nit_ci'             => '99002',
@@ -114,22 +119,36 @@ class SiatInvoiceService
 
         $codigoEmision = $forceOffline ? 2 : (int) ($sale->codigo_emision ?? 1);
 
+        // Norma SIN:
+        // - Código especial (99001, 99002, 99003) -> codigoExcepcion = 1
+        // - Emisión fuera de línea (codigoEmision = 2) con NIT (tipoDoc = 5) -> codigoExcepcion = 1
+        // - Autorización expresa por NIT inválido -> codigoExcepcion = 1
+        $codigoExcepcion = (
+            $esCodigoEspecial
+            || ($codigoEmision === 2 && $docType === 5)
+            || !empty($sale->exception_code)
+        ) ? 1 : 0;
+
+        $resolvedComplement = ($docType === 5) ? null : ($complement ?: ($sale->customer?->complement ?: null));
+        $resolvedEmail = $customerEmail ?: ($sale->customer?->email ?: null);
+
         $payload = [
             'codigo_sucursal'                 => (int) ($this->config['sucursal'] ?? 0),
             'codigo_punto_venta'              => (int) ($this->config['punto_venta'] ?? 0),
+            'codigo_modalidad'                => (int) ($this->config['modalidad'] ?? $this->config['codigo_modalidad'] ?? 2),
             'numero_factura'                  => (int) $sale->invoice_number,
             'codigo_tipo_documento_identidad' => $docType,
             'numero_documento'                => $docNumber,
-            'complemento'                     => $sale->customer?->complement ?: null,
+            'complemento'                     => $resolvedComplement,
             'razon_social_cliente'            => $businessName,
             'codigo_cliente'                  => (string) ($sale->customer_id ?? $docNumber),
-            'correo_cliente'                  => $sale->customer?->email ?: null,
+            'correo_cliente'                  => $resolvedEmail,
             'codigo_metodo_pago'              => (int) ($sale->payment_method_code ?? 1),
             'numero_tarjeta'                  => $sale->card_number ?: null,
             'monto_gift_card'                 => ((int) ($sale->payment_method_code ?? 1) === 27 || (float) ($sale->gift_card_amount ?? 0) > 0) ? (float) ($sale->gift_card_amount ?: $sale->total_amount) : null,
             'monto_total'                     => (float) $sale->total_amount,
             'descuento_adicional'             => round((float) ($sale->additional_discount ?? 0), 2),
-            'codigo_excepcion'                => !empty($sale->exception_code) ? (int) $sale->exception_code : null,
+            'codigo_excepcion'                => $codigoExcepcion,
             'codigo_emision'                  => $codigoEmision,
             'is_offline'                      => ($codigoEmision === 2),
             'cafc'                            => !empty($sale->cafc) ? trim((string) $sale->cafc) : null,
@@ -198,8 +217,9 @@ class SiatInvoiceService
                 'X-API-KEY' => $this->apiKey,
                 'Accept'    => 'application/json',
             ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/anular", [
-                'cuf'           => $sale->cuf,
-                'codigo_motivo' => $motivo,
+                'cuf'              => $sale->cuf,
+                'codigo_motivo'    => $motivo,
+                'codigo_modalidad' => (int) ($this->config['modalidad'] ?? $this->config['codigo_modalidad'] ?? 2),
             ]);
 
             $body = $response->body();
@@ -238,7 +258,8 @@ class SiatInvoiceService
                 'X-API-KEY' => $this->apiKey,
                 'Accept'    => 'application/json',
             ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/revertir-anulacion", [
-                'cuf' => $sale->cuf,
+                'cuf'              => $sale->cuf,
+                'codigo_modalidad' => (int) ($this->config['modalidad'] ?? $this->config['codigo_modalidad'] ?? 2),
             ]);
 
             $body = $response->body();
@@ -383,6 +404,50 @@ class SiatInvoiceService
         } catch (\Throwable $e) {
             $this->logError("Error al validar paquete: " . $e->getMessage());
             throw $e;
+        }
+    }
+
+    /**
+     * Envía automáticamente al correo del comprador el PDF y el XML oficial de la factura
+     * ante Emisión, Anulación o Reversión de Anulación (Requisito SIN Fase II).
+     */
+    public function sendInvoiceEmail(
+        Sale $sale,
+        ?string $recipientEmail = null,
+        string $tipoOperacion = 'EMISION',
+        ?string $motivoAnulacion = null
+    ): bool {
+        $sale->loadMissing(['items.product', 'customer', 'user']);
+        $email = trim((string) ($recipientEmail ?: ($sale->customer?->email ?? '')));
+        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL) || empty($sale->cuf)) {
+            return false;
+        }
+
+        try {
+            $pdfService = app(SiatPdfService::class);
+            $pdfContent = $pdfService->generateLetter($sale);
+
+            $xmlContent = null;
+            try {
+                $xmlRes = Http::withHeaders([
+                    'X-API-KEY' => $this->apiKey,
+                    'Accept'    => 'application/xml, application/json',
+                ])->timeout(10)->get("{$this->apiUrl}/facturas/{$sale->cuf}/xml");
+
+                if ($xmlRes->successful() && !empty($xmlRes->body())) {
+                    $xmlContent = $xmlRes->body();
+                }
+            } catch (\Throwable $xmlErr) {
+                $this->logError("No se pudo adjuntar XML para CUF {$sale->cuf}: " . $xmlErr->getMessage());
+            }
+
+            \Illuminate\Support\Facades\Mail::to($email)
+                ->send(new \App\Mail\FacturaMailable($sale, $pdfContent, $xmlContent, $tipoOperacion, $motivoAnulacion));
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->logError("Error enviando notificación por correo ({$tipoOperacion}) a {$email}: " . $e->getMessage());
+            return false;
         }
     }
 

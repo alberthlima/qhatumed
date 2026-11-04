@@ -46,7 +46,9 @@ class SiatPdfService
 
         // Generar QR SVG en base64 (Vectorial y nítido para impresoras térmicas)
         $qrCode = base64_encode(QrCode::format('svg')->size(120)->generate($qrContent));
-        $literalAmount = NumberTranslateHelper::toLiteral((float)$sale->total_amount);
+        $giftCardAmt = round((float) ($sale->gift_card_amount ?? 0), 2);
+        $payableAmount = round(max(0.0, (float) $sale->total_amount - $giftCardAmt), 2);
+        $literalAmount = NumberTranslateHelper::toLiteral($payableAmount);
 
         $pdf = Pdf::loadView('siat.factura_termica', [
             'sale'          => $sale,
@@ -87,7 +89,9 @@ class SiatPdfService
         );
 
         $qrCode = base64_encode(QrCode::format('svg')->size(130)->generate($qrContent));
-        $literalAmount = NumberTranslateHelper::toLiteral((float)$sale->total_amount);
+        $giftCardAmt = round((float) ($sale->gift_card_amount ?? 0), 2);
+        $payableAmount = round(max(0.0, (float) $sale->total_amount - $giftCardAmt), 2);
+        $literalAmount = NumberTranslateHelper::toLiteral($payableAmount);
 
         $pdf = Pdf::loadView('siat.factura_carta', [
             'sale'          => $sale,

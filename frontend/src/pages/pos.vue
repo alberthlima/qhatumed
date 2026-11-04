@@ -48,6 +48,8 @@ const cart = ref([])
 const searchQuery = ref('')
 const cashTendered = ref(0)
 const discount = ref(0)
+const discountMode = ref('BS') // 'BS' o 'PCT' (soporta cascada ej: 10+5)
+const discountInput = ref('')
 const saleDate = ref(new Date().toISOString().slice(0, 10))
 
 // Datos
@@ -72,10 +74,11 @@ const giftCardCode = ref('')
 const giftCardAmount = ref(0)
 const paymentMethod = ref(1) // 1: Efectivo, 2: Tarjeta, 10: Combinado, 7: QR, 27: Gift Card, 35: Pago Posterior
 const documentType = ref(5)   // 5: NIT (Normado para 99002 Control Tributario)
-const hasExceptionCode = ref(false) // Código de Excepción (1 = NIT no registrado/observado en padrón SIN)
+const hasExceptionCode = ref(true) // Código de Excepción (1 = 99001/99002/99003, NIT offline o NIT observado en padrón SIN)
 const isOfflineMode = ref(false)     // Modo Contingencia Fuera de Línea (RND 102100000011)
 const manualCafc = ref('')           // Código CAFC (Talonario preimpreso o contingencia)
 const manualInvoiceNumber = ref('')  // N° Factura manual del talonario
+const manualEmissionDateTime = ref('') // Fecha y hora exacta de emisión para contingencia / CAFC manual
 const isAddClientDialog = ref(false)
 
 // Tipos de Documento SIAT
@@ -200,19 +203,19 @@ const setFiscalPreset = (type) => {
     nitCi.value = '99002'
     businessName.value = 'CONTROL TRIBUTARIO'
     complement.value = ''
-    hasExceptionCode.value = false
+    hasExceptionCode.value = true
   } else if (type === 'menores') {
     documentType.value = 5
     nitCi.value = '99003'
     businessName.value = 'VENTAS MENORES DEL DÍA'
     complement.value = ''
-    hasExceptionCode.value = false
+    hasExceptionCode.value = true
   } else if (type === 'especial') {
     documentType.value = 5
     nitCi.value = '99001'
     businessName.value = 'CASOS ESPECIALES'
     complement.value = ''
-    hasExceptionCode.value = false
+    hasExceptionCode.value = true
   } else if (type === 'ci') {
     documentType.value = 1
     nitCi.value = ''
@@ -221,6 +224,27 @@ const setFiscalPreset = (type) => {
     hasExceptionCode.value = false
   }
 }
+
+// Norma SIN:
+// - Códigos especiales 99001, 99002, 99003 siempre llevan codigoExcepcion = 1 y tipoDoc = 5
+// - Emisión fuera de línea (isOfflineMode) con NIT (documentType = 5) siempre lleva codigoExcepcion = 1
+watch([nitCi, documentType, isOfflineMode], ([num, docType, offline]) => {
+  const cleanNum = String(num || '').trim()
+  if (['99001', '99002', '99003'].includes(cleanNum)) {
+    if (documentType.value !== 5) documentType.value = 5
+    hasExceptionCode.value = true
+  } else if (offline && docType === 5) {
+    hasExceptionCode.value = true
+  }
+})
+
+watch(isOfflineMode, (val) => {
+  if (val && !manualEmissionDateTime.value) {
+    const now = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    manualEmissionDateTime.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
+  }
+})
 
 // Validación y restricción de formato numérico para NIT / CI.
 // Solo aplica a tipos 1 (CI) y 5 (NIT); CEX / Pasaporte / Otro documento pueden ser alfanuméricos.
@@ -251,16 +275,40 @@ const onNitCiKeypress = (e) => {
   }
 }
 
+// Calcula monto de descuento en Bs. a partir de una expresión en Bs. o en % (soporta cascada ej: "10+5")
+const computeDiscountFromExpr = (baseAmount, rawExpr, mode) => {
+  const str = String(rawExpr ?? '').trim()
+  if (!str) return 0
+  if (mode === 'PCT') {
+    // Soporta descuentos porcentuales simples ("15") o en cascada ("10+5")
+    const parts = str.split('+').map(p => parseFloat(p.trim())).filter(n => !isNaN(n) && n > 0)
+    if (parts.length === 0) return 0
+    let remaining = baseAmount
+    for (const pct of parts) {
+      const clampedPct = Math.min(100, Math.max(0, pct))
+      remaining = remaining * (1 - clampedPct / 100)
+    }
+    return Number(Math.max(0, baseAmount - remaining).toFixed(2))
+  } else {
+    const parts = str.split('+').map(p => parseFloat(p.trim())).filter(n => !isNaN(n) && n > 0)
+    const sumBs = parts.reduce((a, b) => a + b, 0)
+    return Number(Math.max(0, sumBs).toFixed(2))
+  }
+}
+
 // Aplicar o quitar descuento individual a un producto (normado SIN: subTotal > 0, mínimo 0.01 Bs)
 const apply100Discount = (item) => {
   if (item.discount > 0) {
     item.discount = 0
+    item.discountInput = ''
     toast.showInfo(`Descuento eliminado de ${item.name}`, 'Descuento')
   } else {
     const gross = grossOf(item)
     // Norma SIN (XSD minExclusive 0.0): subTotal debe ser > 0, por lo que el descuento deja un residual de Bs. 0.01
     const maxDiscount = Number(Math.max(0, gross - 0.01).toFixed(2))
     item.discount = maxDiscount
+    item.discountMode = 'BS'
+    item.discountInput = String(maxDiscount)
     toast.showSuccess(`Descuento individual aplicado (Bs. ${item.discount}, residual normado Bs. 0.01) a ${item.name}`, 'Descuento 100% (SIN)')
   }
 }
@@ -268,32 +316,76 @@ const apply100Discount = (item) => {
 // Importe bruto de un ítem (cantidad x precio), tope del descuento por ítem
 const grossOf = (item) => Number((Number(item.quantity || 0) * Number(item.sale_price || 0)).toFixed(2))
 
-// Descuento por ítem manual, acotado entre 0 y el importe del ítem menos 0.01 (norma XSD subTotal > 0)
+const toggleItemDiscountMode = (item) => {
+  item.discountMode = item.discountMode === 'PCT' ? 'BS' : 'PCT'
+  item.discountInput = ''
+  item.discount = 0
+}
+
+// Descuento por ítem manual (en Bs. o %, con soporte de cascada ej. 10+5), acotado a gross - 0.01
 const setItemDiscount = (item, event) => {
-  let val = parseFloat(event.target.value)
-  if (isNaN(val) || val < 0) val = 0
+  const raw = event.target.value
+  item.discountInput = raw
   const gross = grossOf(item)
+  let val = computeDiscountFromExpr(gross, raw, item.discountMode || 'BS')
   const max = Number(Math.max(0, gross - 0.01).toFixed(2))
   if (val > max) {
     val = max
     toast.showWarning(`Por norma del SIN (XSD), el subtotal del ítem debe ser mayor a 0. Descuento ajustado a Bs. ${max.toFixed(2)} (subtotal 0.01 Bs).`, 'Tope Normativo SIN')
   }
   item.discount = Number(val.toFixed(2))
-  event.target.value = item.discount || ''
 }
 
-// Si cambia la cantidad, el descuento nunca debe dejar el subtotal en 0
+const toggleGlobalDiscountMode = () => {
+  discountMode.value = discountMode.value === 'PCT' ? 'BS' : 'PCT'
+  discountInput.value = ''
+  discount.value = 0
+}
+
+const onGlobalDiscountInput = (event) => {
+  const raw = event.target.value
+  discountInput.value = raw
+  const sub = Number(subtotal.value.toFixed(2))
+  if (sub <= 0) {
+    discount.value = 0
+    return
+  }
+  let val = computeDiscountFromExpr(sub, raw, discountMode.value)
+  const maxAllowed = paymentMethod.value === 27 ? sub : Number(Math.max(0, sub - 0.01).toFixed(2))
+  if (val > maxAllowed) {
+    val = maxAllowed
+    toast.showWarning(
+      `Restricción Normativa SIN: No se permite aplicar un descuento global del 100% que deje la factura en Bs. 0.00. Tope aplicado: Bs. ${maxAllowed.toFixed(2)}.`,
+      'Tope Normativo SIN'
+    )
+  }
+  discount.value = Number(val.toFixed(2))
+}
+
+// Si cambia la cantidad, recalcular o ajustar el descuento del ítem para que nunca deje el subtotal en 0
 watch(cart, (items) => {
   items.forEach(i => {
-    const max = Number(Math.max(0, grossOf(i) - 0.01).toFixed(2))
+    const gross = grossOf(i)
+    if (i.discountMode === 'PCT' && i.discountInput) {
+      i.discount = computeDiscountFromExpr(gross, i.discountInput, 'PCT')
+    }
+    const max = Number(Math.max(0, gross - 0.01).toFixed(2))
     if (Number(i.discount || 0) > max) i.discount = max
   })
+  // Recalcular descuento global si está en modo %
+  if (discountMode.value === 'PCT' && discountInput.value) {
+    const sub = Number(subtotal.value.toFixed(2))
+    const maxAllowed = paymentMethod.value === 27 ? sub : Number(Math.max(0, sub - 0.01).toFixed(2))
+    discount.value = Math.min(maxAllowed, computeDiscountFromExpr(sub, discountInput.value, 'PCT'))
+  }
 }, { deep: true })
 
-// El descuento adicional global no puede superar la suma de subtotales
-watch(discount, (val) => {
-  const max = Number(subtotal.value.toFixed(2))
-  if (Number(val || 0) > max) discount.value = max
+// El descuento adicional global no puede igualar o superar la suma de subtotales (salvo Gift Card)
+watch([discount, subtotal], ([val, sub]) => {
+  const maxAllowed = paymentMethod.value === 27
+    ? Number(sub.toFixed(2))
+    : Number(Math.max(0, sub - 0.01).toFixed(2))
+  if (Number(val || 0) > maxAllowed) discount.value = maxAllowed
   if (Number(val || 0) < 0) discount.value = 0
 })
 
@@ -310,7 +402,9 @@ const addToCart = (product) => {
     cart.value.push({ 
       ...product, 
       quantity: 1,
-      discount: 0 
+      discount: 0,
+      discountMode: 'BS',
+      discountInput: ''
     })
   }
 }
@@ -347,15 +441,18 @@ const clearCart = () => {
   cart.value = []
   cashTendered.value = 0
   discount.value = 0
+  discountInput.value = ''
+  discountMode.value = 'BS'
   cardNumber.value = ''
   splitCashAmount.value = 0
   splitCardAmount.value = 0
   giftCardCode.value = ''
   giftCardAmount.value = 0
-  hasExceptionCode.value = false
+  hasExceptionCode.value = ['99001', '99002', '99003'].includes(String(nitCi.value || '').trim())
   isOfflineMode.value = false
   manualCafc.value = ''
   manualInvoiceNumber.value = ''
+  manualEmissionDateTime.value = ''
 }
 
 const initSplitAmounts = () => {
@@ -464,7 +561,12 @@ const checkout = async () => {
 
   const now = new Date()
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
-  const fullSaleDate = saleDate.value ? `${saleDate.value} ${timeStr}` : `${now.toISOString().slice(0, 10)} ${timeStr}`
+  let fullSaleDate = saleDate.value ? `${saleDate.value} ${timeStr}` : `${now.toISOString().slice(0, 10)} ${timeStr}`
+  if (isInvoice.value && isOfflineMode.value && manualEmissionDateTime.value) {
+    // Usar la fecha y hora exacta de emisión de la factura manual / contingencia
+    const normalizedDt = manualEmissionDateTime.value.replace('T', ' ')
+    fullSaleDate = normalizedDt.length === 16 ? `${normalizedDt}:00` : normalizedDt
+  }
 
   let finalDocType = documentType.value
   let finalNitCi = String(nitCi.value || '').trim()
@@ -793,20 +895,28 @@ watch(searchQuery, (newVal) => {
                   <td class="text-left">
                     <div class="item-table-name" :title="item.name">{{ item.name }}</div>
                     <div class="item-table-lab">{{ item.laboratory?.name || 'GENÉRICO' }}</div>
-                    <!-- Descuento por ítem (SIAT: montoDescuento) -->
-                    <div class="d-flex align-center mt-1" style="gap: 4px;">
-                      <span class="text-caption text-warning font-weight-bold">Desc. Bs.</span>
+                    <!-- Descuento por ítem (SIAT: montoDescuento, en Bs. o % / cascada ej. 10+5) -->
+                    <div class="d-flex align-center mt-1 flex-wrap" style="gap: 4px;">
+                      <button
+                        type="button"
+                        class="stepper-btn font-weight-bold text-warning"
+                        style="width: auto; padding: 0 5px; font-size: 10px;"
+                        title="Cambiar entre descuento en Bs. o en % (soporta cascada ej. 10+5)"
+                        @click="toggleItemDiscountMode(item)"
+                      >
+                        Desc. {{ item.discountMode === 'PCT' ? '%' : 'Bs.' }}
+                      </button>
                       <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        :max="grossOf(item)"
-                        :value="item.discount || ''"
-                        placeholder="0.00"
+                        type="text"
+                        :value="item.discountInput ?? (item.discount || '')"
+                        :placeholder="item.discountMode === 'PCT' ? 'Ej: 10 o 10+5' : '0.00'"
                         class="discount-mini-input"
-                        style="width: 64px;"
+                        style="width: 72px;"
                         @change="setItemDiscount(item, $event)"
                       />
+                      <span v-if="item.discountMode === 'PCT' && item.discount > 0" class="text-caption text-warning font-weight-bold" style="font-size: 10px;">
+                        (-Bs. {{ Number(item.discount).toFixed(2) }})
+                      </span>
                       <button
                         type="button"
                         class="stepper-btn"
@@ -868,19 +978,29 @@ watch(searchQuery, (newVal) => {
               <span class="text-body-2 font-weight-bold">Bs. {{ subtotal.toFixed(2) }}</span>
             </div>
 
-            <!-- Descuento Global (SIAT) -->
+            <!-- Descuento Global (SIAT: descuentoAdicional, en Bs. o % / cascada ej. 10+5) -->
             <div class="d-flex justify-space-between align-center mb-1">
               <span class="text-caption text-warning font-weight-bold d-flex align-center">
-                <VIcon icon="ri-discount-percent-line" size="14" class="me-1" /> Descuento:
+                <VIcon icon="ri-discount-percent-line" size="14" class="me-1" /> Descuento Global:
+                <span v-if="discount > 0" class="ms-1 text-caption">(-Bs. {{ Number(discount).toFixed(2) }})</span>
               </span>
-              <div class="d-flex align-center" style="width: 100px;">
+              <div class="d-flex align-center" style="gap: 4px;">
+                <button
+                  type="button"
+                  class="stepper-btn font-weight-bold text-warning"
+                  style="width: auto; padding: 0 6px; font-size: 11px; height: 26px;"
+                  title="Alternar entre Bs. y % (soporta cascada ej. 10+5)"
+                  @click="toggleGlobalDiscountMode"
+                >
+                  {{ discountMode === 'PCT' ? '%' : 'Bs.' }}
+                </button>
                 <input 
-                  type="number" 
-                  v-model.number="discount" 
-                  min="0" 
-                  step="0.5" 
-                  placeholder="0.00"
+                  type="text" 
+                  :value="discountInput" 
+                  :placeholder="discountMode === 'PCT' ? 'Ej: 10 o 10+5' : '0.00'"
                   class="discount-mini-input"
+                  style="width: 90px;"
+                  @change="onGlobalDiscountInput($event)"
                 />
               </div>
             </div>
@@ -1226,7 +1346,7 @@ watch(searchQuery, (newVal) => {
 
             <!-- Opciones de Talonario Manual con CAFC (RND 102100000011) -->
             <VRow v-if="isInvoice && isOfflineMode" density="compact" class="mt-2">
-              <VCol cols="12" sm="7">
+              <VCol cols="12" sm="4">
                 <VTextField
                   v-model="manualCafc"
                   label="Código CAFC (Talonario Manual)"
@@ -1235,11 +1355,11 @@ watch(searchQuery, (newVal) => {
                   density="compact"
                   clearable
                   prepend-inner-icon="ri-barcode-box-line"
-                  hint="Opcional: Si se transcribe de talonario preimpreso"
+                  hint="Opcional: Talonario CAFC"
                   persistent-hint
                 />
               </VCol>
-              <VCol cols="12" sm="5">
+              <VCol cols="12" sm="3">
                 <VTextField
                   v-model="manualInvoiceNumber"
                   label="N° Factura Manual"
@@ -1250,6 +1370,18 @@ watch(searchQuery, (newVal) => {
                   clearable
                   prepend-inner-icon="ri-hashtag"
                   hint="N° físico del talonario"
+                  persistent-hint
+                />
+              </VCol>
+              <VCol cols="12" sm="5">
+                <VTextField
+                  v-model="manualEmissionDateTime"
+                  label="Fecha/Hora Emisión Contingencia"
+                  type="datetime-local"
+                  variant="outlined"
+                  density="compact"
+                  prepend-inner-icon="ri-time-line"
+                  hint="Debe estar dentro del rango del Evento Significativo"
                   persistent-hint
                 />
               </VCol>

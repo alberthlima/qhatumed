@@ -19,6 +19,12 @@ class SaleResource extends JsonResource
             'invoice_number' => $this->invoice_number,
             'cuf' => $this->cuf,
             'invoice_url' => $this->invoice_url,
+            'estado_siat' => $this->estado_siat,
+            'codigo_emision' => (int) ($this->codigo_emision ?? 1),
+            'cafc' => $this->cafc,
+            'payment_method_code' => (int) ($this->payment_method_code ?? 1),
+            'gift_card_amount' => (float) ($this->gift_card_amount ?? 0),
+            'additional_discount' => (float) ($this->additional_discount ?? 0),
             
             'total_amount' => (float) $this->total_amount,
             
