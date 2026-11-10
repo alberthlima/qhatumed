@@ -97,13 +97,15 @@
 </head>
 <body>
     <div class="header">
-        <h3>{{ $config['razon_social'] ?? 'FARMACIA MISALUD' }}</h3>
+        <div class="bold" style="font-size: 11px;">FACTURA</div>
+        <div style="font-size: 8.5px; margin-bottom: 4px;">CON DERECHO A CRÉDITO FISCAL</div>
+        <h3>{{ $config['razon_social'] ?? 'LIMA ALBERTH MAYRON' }}</h3>
         <div class="header-branch">
-            <strong>{{ ($config['sucursal'] ?? 0) == 0 ? 'CASA MATRIZ' : 'SUCURSAL Nº ' . $config['sucursal'] }}</strong><br>
-            No. Punto de Venta: {{ $config['punto_venta'] ?? 0 }}<br>
-            {{ $config['direccion'] ?? 'Av. Principal #123 (Zona Norte)' }}<br>
-            Tel. {{ $config['telefono'] ?? '0' }}<br>
-            {{ $config['municipio'] ?? 'Santa Cruz' }} - BOLIVIA
+            <strong>{{ ($config['sucursal'] ?? 0) == 0 ? 'CASA MATRIZ' : 'SUCURSAL N. ' . $config['sucursal'] }}</strong><br>
+            No. Punto de Venta {{ $config['punto_venta'] ?? 0 }}<br>
+            {{ $config['direccion'] ?? 'Av. Principal 123' }}<br>
+            Tel. {{ $config['telefono'] ?? '2222222' }}<br>
+            {{ $config['municipio'] ?? 'La Paz' }}
         </div>
     </div>
 
@@ -140,6 +142,33 @@
         @endif
     </div>
 
+    @php
+        $groupedRows = [];
+        foreach ($sale->items as $item) {
+            $k = $item->product_id . '_' . number_format((float) $item->unit_price, 2, '.', '');
+            if (!isset($groupedRows[$k])) {
+                $groupedRows[$k] = [
+                    'code'       => (string) ($item->product->id ?? $item->product_id),
+                    'name'       => $item->product->name ?? 'Producto',
+                    'quantity'   => 0.0,
+                    'unit_price' => (float) $item->unit_price,
+                    'discount'   => 0.0,
+                ];
+            }
+            $groupedRows[$k]['quantity'] += (float) $item->quantity;
+            $groupedRows[$k]['discount'] = round($groupedRows[$k]['discount'] + (float) ($item->discount ?? 0), 2);
+        }
+        $sumSubtotals = 0.0;
+        foreach ($groupedRows as &$gr) {
+            $gr['subtotal'] = round(($gr['quantity'] * $gr['unit_price']) - $gr['discount'], 2);
+            $sumSubtotals = round($sumSubtotals + $gr['subtotal'], 2);
+        }
+        unset($gr);
+        $additionalDiscount = round((float) ($sale->additional_discount ?? 0), 2);
+        $giftCardAmt        = round((float) ($sale->gift_card_amount ?? 0), 2);
+        $montoAPagar        = round(max(0, (float) $sale->total_amount - $giftCardAmt), 2);
+    @endphp
+
     <table class="items-table">
         <thead>
             <tr>
@@ -150,52 +179,45 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($sale->items as $item)
+            @foreach($groupedRows as $row)
             <tr>
-                <td class="text-center">{{ number_format($item->quantity, 0) }}</td>
+                <td class="text-center">{{ number_format($row['quantity'], 2) }}</td>
                 <td>
-                    {{ $item->product->name }}
-                    @if(($item->discount ?? 0) > 0)
-                        <br><span style="font-size: 8px;">Desc. Bs. -{{ number_format($item->discount, 2) }}</span>
+                    {{ $row['code'] }} - {{ $row['name'] }}
+                    @if($row['discount'] > 0)
+                        <br><span style="font-size: 8px;">Desc. Bs. -{{ number_format($row['discount'], 2) }}</span>
                     @endif
                 </td>
-                <td class="text-right">{{ number_format($item->unit_price, 2) }}</td>
-                <td class="text-right">{{ number_format($item->subtotal ?? ($item->quantity * $item->unit_price), 2) }}</td>
+                <td class="text-right">{{ number_format($row['unit_price'], 2) }}</td>
+                <td class="text-right">{{ number_format($row['subtotal'], 2) }}</td>
             </tr>
             @endforeach
         </tbody>
     </table>
 
-    @php
-        $grossSubtotal = $sale->items->sum(fn($i) => (float) $i->quantity * (float) $i->unit_price);
-        $itemDiscounts = (float) $sale->items->sum('discount');
-        $totalDiscount = $itemDiscounts + (float) ($sale->additional_discount ?? 0);
-        $giftCardAmt   = (float) ($sale->gift_card_amount ?? 0);
-        $montoAPagar   = max(0, (float) $sale->total_amount - $giftCardAmt);
-    @endphp
     <table class="totals-table">
         <tr>
-            <td class="text-right">SUBTOTAL Bs.</td>
-            <td width="35%" class="text-right">{{ number_format($grossSubtotal, 2) }}</td>
+            <td class="text-right">SUBTOTAL Bs</td>
+            <td width="35%" class="text-right">{{ number_format($sumSubtotals, 2) }}</td>
         </tr>
         <tr>
-            <td class="text-right">DESCUENTO Bs.</td>
-            <td class="text-right">{{ number_format($totalDiscount, 2) }}</td>
+            <td class="text-right">DESCUENTO Bs</td>
+            <td class="text-right">{{ number_format($additionalDiscount, 2) }}</td>
         </tr>
         <tr>
-            <td class="text-right bold">TOTAL Bs.</td>
+            <td class="text-right bold">TOTAL Bs</td>
             <td width="35%" class="text-right bold">{{ number_format($sale->total_amount, 2) }}</td>
         </tr>
         <tr>
-            <td class="text-right">MONTO GIFT CARD Bs.</td>
+            <td class="text-right">MONTO GIFT CARD Bs</td>
             <td class="text-right">{{ number_format($giftCardAmt, 2) }}</td>
         </tr>
         <tr>
-            <td class="text-right bold">MONTO A PAGAR Bs.</td>
+            <td class="text-right bold">MONTO A PAGAR Bs</td>
             <td class="text-right bold">{{ number_format($montoAPagar, 2) }}</td>
         </tr>
         <tr>
-            <td class="text-right" style="font-size: 8px;">IMPORTE BASE CRÉD. FISCAL:</td>
+            <td class="text-right" style="font-size: 8px;">IMPORTE BASE CRÉDITO FISCAL</td>
             <td class="text-right" style="font-size: 8px;">{{ number_format($montoAPagar, 2) }}</td>
         </tr>
     </table>
@@ -211,9 +233,10 @@
     </div>
 
     <div class="leyenda">
-        <p class="bold">"ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO DE ÉSTA SERÁ SANCIONADO DE ACUERDO A LEY"</p>
+        <p class="bold">ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO SERÁ SANCIONADO PENALMENTE DE ACUERDO A LEY</p>
         <p>{{ $sale->leyenda ?? $config['leyenda'] ?? 'Ley N° 453: El proveedor debe exhibir el precio total de venta al público en moneda nacional.' }}</p>
-        <p class="italic">{{ ($sale->codigo_emision ?? 1) == 2 ? 'Este documento es la representación gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación fuera de línea' : 'Este documento es la representación gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea' }}</p>
+        <p class="italic">"{{ ($sale->codigo_emision ?? 1) == 2 ? 'Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido fuera de línea, verifique su envío con su proveedor o en la página web www.impuestos.gob.bo' : 'Este documento es la Representación Gráfica de un Documento Fiscal Digital emitido en una modalidad de facturación en línea' }}"</p>
+        <p>(Factura Compra Venta)</p>
     </div>
 </body>
 </html>

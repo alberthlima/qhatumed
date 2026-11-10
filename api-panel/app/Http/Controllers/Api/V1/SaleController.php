@@ -79,7 +79,7 @@ class SaleController extends Controller
             // Validación de plazo normativo (RND 102100000011 Art. 45)
             if ($sale->sale_date) {
                 $fechaEmision = \Carbon\Carbon::parse($sale->sale_date)->timezone('America/La_Paz');
-                $limiteAnulacion = $fechaEmision->copy()->addMonth()->startOfMonth()->addDays(9)->endOfDay();
+                $limiteAnulacion = $fechaEmision->copy()->addMonth()->startOfMonth()->addDays(8)->endOfDay();
                 if (\Carbon\Carbon::now('America/La_Paz')->greaterThan($limiteAnulacion)) {
                     $fEmit = $fechaEmision->format('d/m/Y');
                     $fLim = $limiteAnulacion->format('d/m/Y');

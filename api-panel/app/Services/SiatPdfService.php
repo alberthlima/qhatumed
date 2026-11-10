@@ -159,20 +159,22 @@ class SiatPdfService
                 if ($setting->siat_branch_code !== null) $config['sucursal'] = (int) $setting->siat_branch_code;
                 if ($setting->siat_pos_code !== null) $config['punto_venta'] = (int) $setting->siat_pos_code;
                 if ($setting->siat_environment !== null) $config['ambiente'] = (int) $setting->siat_environment;
+                if ($setting->siat_modality !== null) $config['modalidad'] = (int) $setting->siat_modality;
                 if (!empty($setting->address)) $config['direccion'] = $setting->address;
                 if (!empty($setting->city)) $config['municipio'] = $setting->city;
                 if (!empty($setting->phone)) $config['telefono'] = $setting->phone;
             }
         } catch (\Throwable $e) {}
 
-        if (empty($config['razon_social'])) $config['razon_social'] = 'FARMACIA MISALUD';
+        if (empty($config['razon_social'])) $config['razon_social'] = 'LIMA ALBERTH MAYRON';
         if (empty($config['nit'])) $config['nit'] = '6789406016';
-        if (empty($config['direccion'])) $config['direccion'] = 'Av. Principal #123 (Zona Norte)';
-        if (empty($config['municipio'])) $config['municipio'] = 'Santa Cruz';
-        if (empty($config['telefono'])) $config['telefono'] = '3-3456789';
+        if (empty($config['direccion'])) $config['direccion'] = 'Av. Principal 123';
+        if (empty($config['municipio'])) $config['municipio'] = 'La Paz';
+        if (empty($config['telefono'])) $config['telefono'] = '2222222';
         if (!isset($config['sucursal'])) $config['sucursal'] = 0;
         if (!isset($config['punto_venta'])) $config['punto_venta'] = 0;
         if (!isset($config['ambiente'])) $config['ambiente'] = 2;
+        if (!isset($config['modalidad'])) $config['modalidad'] = 1;
         if (empty($config['leyenda'])) {
             $config['leyenda'] = 'Ley N° 453: El proveedor de servicios debe prioritariamente informar sobre las características de los productos.';
         }

@@ -19,6 +19,7 @@ const transmittingIds = ref(new Set())
 // --- Estados de Registro (Modal) ---
 const isAddDialog = ref(false)
 const isSaving = ref(false)
+const activeCafcCode = ref('')
 const form = ref({
   codigo_motivo: 2, // 2: Falla de internet por defecto
   descripcion: '',
@@ -26,6 +27,18 @@ const form = ref({
   fecha_fin: '',
   cafc: ''
 })
+
+const fetchActiveCafc = async () => {
+  try {
+    const res = await $api('/v1/siat/cafc')
+    if (res && Array.isArray(res.data) && res.data.length > 0) {
+      const vigente = res.data.find(c => c.is_active) || res.data[0]
+      if (vigente && vigente.codigo_cafc) {
+        activeCafcCode.value = vigente.codigo_cafc
+      }
+    }
+  } catch (e) {}
+}
 
 const motivosEvento = [
   { title: '1 - Corte de suministro de energía eléctrica (Manual con CAFC)', value: 1 },
@@ -117,7 +130,10 @@ const formatDate = (dateStr) => {
   return new Date(dateStr).toLocaleString()
 }
 
-onMounted(fetchEventos)
+onMounted(() => {
+  fetchEventos()
+  fetchActiveCafc()
+})
 
 definePage({ meta: { permission: 'all' } })
 </script>
@@ -325,6 +341,9 @@ definePage({ meta: { permission: 'all' } })
                   icon="ri-information-line"
                 >
                   <strong>Evento con Talonario Manual:</strong> Para este motivo (corte eléctrico, software o hardware) la normativa exige la consignación del <strong>Código CAFC</strong> autorizado por Impuestos.
+                  <VBtn v-if="activeCafcCode && form.cafc !== activeCafcCode" size="x-small" color="warning" variant="flat" class="ms-2 font-weight-bold" @click="form.cafc = activeCafcCode">
+                    Usar {{ activeCafcCode }}
+                  </VBtn>
                 </VAlert>
                 <VTextField
                   v-model="form.cafc"

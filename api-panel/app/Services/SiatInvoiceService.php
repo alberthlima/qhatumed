@@ -73,18 +73,37 @@ class SiatInvoiceService
         }
 
         $itemsPayload = [];
+        $groupedItems = [];
         foreach ($sale->items as $item) {
-            $product = $item->product;
+            $key = $item->product_id . '_' . number_format((float) $item->unit_price, 2, '.', '');
+            if (!isset($groupedItems[$key])) {
+                $groupedItems[$key] = [
+                    'product'    => $item->product,
+                    'product_id' => $item->product_id,
+                    'quantity'   => 0.0,
+                    'unit_price' => (float) $item->unit_price,
+                    'discount'   => 0.0,
+                ];
+            }
+            $groupedItems[$key]['quantity'] += (float) $item->quantity;
+            $groupedItems[$key]['discount'] = round($groupedItems[$key]['discount'] + (float) ($item->discount ?? 0), 2);
+        }
+
+        foreach ($groupedItems as $g) {
+            $product = $g['product'];
+            $qty = $g['quantity'];
+            $price = $g['unit_price'];
+            $disc = $g['discount'];
             $itemsPayload[] = [
-                'codigo_producto'         => (string) ($product->id ?? $item->product_id),
-                'codigo_producto_sin'     => (int) ($product->siat_product_code ?? 45142),
+                'codigo_producto'         => (string) ($product->id ?? $g['product_id']),
+                'codigo_producto_sin'     => (int) ($product->siat_product_code ?? 99100),
                 'codigo_actividad'        => (string) ($this->config['actividad_economica'] ?? '474110'),
                 'descripcion'             => (string) ($product->name ?? 'Producto'),
-                'cantidad'                => (float) $item->quantity,
-                'precio_unitario'         => (float) $item->unit_price,
-                'sub_total'               => round(((float) $item->quantity * (float) $item->unit_price) - (float) ($item->discount ?? 0), 2),
+                'cantidad'                => $qty,
+                'precio_unitario'         => $price,
+                'sub_total'               => round(($qty * $price) - $disc, 2),
                 'codigo_unidad_medida'    => (int) ($product->siat_unit_measure_code ?? 57),
-                'descuento'               => round((float) ($item->discount ?? 0), 2),
+                'descuento'               => $disc,
             ];
         }
 
@@ -119,14 +138,17 @@ class SiatInvoiceService
 
         $codigoEmision = $forceOffline ? 2 : (int) ($sale->codigo_emision ?? 1);
 
-        // Norma SIN:
+        // Norma SIN (Nota aclaratoria v1.0.48):
+        // codigoExcepcion = 1 aplica únicamente a tipoDocumento = 5 (NIT):
         // - Código especial (99001, 99002, 99003) -> codigoExcepcion = 1
         // - Emisión fuera de línea (codigoEmision = 2) con NIT (tipoDoc = 5) -> codigoExcepcion = 1
         // - Autorización expresa por NIT inválido -> codigoExcepcion = 1
         $codigoExcepcion = (
-            $esCodigoEspecial
-            || ($codigoEmision === 2 && $docType === 5)
-            || !empty($sale->exception_code)
+            $docType === 5 && (
+                $esCodigoEspecial
+                || $codigoEmision === 2
+                || !empty($sale->exception_code)
+            )
         ) ? 1 : 0;
 
         $resolvedComplement = ($docType === 5) ? null : ($complement ?: ($sale->customer?->complement ?: null));
@@ -135,7 +157,6 @@ class SiatInvoiceService
         $payload = [
             'codigo_sucursal'                 => (int) ($this->config['sucursal'] ?? 0),
             'codigo_punto_venta'              => (int) ($this->config['punto_venta'] ?? 0),
-            'codigo_modalidad'                => (int) ($this->config['modalidad'] ?? $this->config['codigo_modalidad'] ?? 2),
             'numero_factura'                  => (int) $sale->invoice_number,
             'codigo_tipo_documento_identidad' => $docType,
             'numero_documento'                => $docNumber,
@@ -190,6 +211,23 @@ class SiatInvoiceService
                 'status'         => 'COMPLETED',
             ]);
 
+            // Sincronizar caché local de CompanySetting con los datos maestros de siat-api-service
+            try {
+                if (!empty($data['codigo_modalidad']) || !empty($data['nit_emisor'])) {
+                    $setting = CompanySetting::first();
+                    if ($setting) {
+                        $syncData = [];
+                        if (!empty($data['codigo_modalidad'])) $syncData['siat_modality'] = (int) $data['codigo_modalidad'];
+                        if (!empty($data['ambiente'])) $syncData['siat_environment'] = (int) $data['ambiente'];
+                        if (!empty($data['nit_emisor'])) $syncData['nit'] = (string) $data['nit_emisor'];
+                        if (!empty($data['razon_social_emisor'])) $syncData['legal_name'] = (string) $data['razon_social_emisor'];
+                        if (!empty($syncData)) {
+                            $setting->update($syncData);
+                        }
+                    }
+                }
+            } catch (\Throwable $ignored) {}
+
             return $sale;
 
         } catch (\Throwable $e) {
@@ -217,9 +255,8 @@ class SiatInvoiceService
                 'X-API-KEY' => $this->apiKey,
                 'Accept'    => 'application/json',
             ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/anular", [
-                'cuf'              => $sale->cuf,
-                'codigo_motivo'    => $motivo,
-                'codigo_modalidad' => (int) ($this->config['modalidad'] ?? $this->config['codigo_modalidad'] ?? 2),
+                'cuf'           => $sale->cuf,
+                'codigo_motivo' => $motivo,
             ]);
 
             $body = $response->body();
@@ -258,8 +295,7 @@ class SiatInvoiceService
                 'X-API-KEY' => $this->apiKey,
                 'Accept'    => 'application/json',
             ])->timeout($this->timeout)->post("{$this->apiUrl}/facturas/revertir-anulacion", [
-                'cuf'              => $sale->cuf,
-                'codigo_modalidad' => (int) ($this->config['modalidad'] ?? $this->config['codigo_modalidad'] ?? 2),
+                'cuf' => $sale->cuf,
             ]);
 
             $body = $response->body();

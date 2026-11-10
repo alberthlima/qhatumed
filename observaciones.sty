@@ -1,0 +1,71 @@
+las pruebas que realicemos deben ser remitidas a este correo: sinpruebas2@gmail.com, adicionalmente es necesario que comparta pantalla del sistema para poder ver su manipulación
+
+inicaremos con modalidad electronica en linea
+NIT: 599282801S
+ Razon social: Ramirez Leyton Guillermo
+ En el detalle de la factura debe estar 4 
+ items uno de los items con descuento 
+ individual del 100%, 
+ Tipo de Pago: combinado
+
+este ejemplo permite detectar la 
+existencia de restricciones en el 
+registro cliente, 
+debido a que la casilla NIT/CI es de 
+formato específicamente numérico, debe 
+restringir la inclusión de letras o texto
+
+* revisar descuentos tanto global como individual, no debe emitir factura con 100% de descuento, ver si el descuento es peorcentual o en bs
+registro del cliente (restriccion de letras en cuadros numericos)
+
+descuentos individuales y globales (no existe el valor de facturación 
+en cero), descuentos escalonados
+
+3, medios de pago, empleos de targetas, efectivo,,,, y combinacion 
+de los mismos
+
+Códigos especiales
+
+creacion de punto de venta
+
+emision de fatura fuera de linea
+
+emision de CAFC
+
+anulacion
+
+reversion
+
+anulacion (para verificar restriccion)
+
+asimismo cada movimiento o ejemplo debe verificarse mediante los correos que manda tu sistema, tanto la expresion grafica como el archivo XML; tomando en cuenta el contenido de tu solicitud, de la modalidad de facturación así como los sectores.
+
+
+
+1. ¿Por qué no puedes cargar el contenido de los chats desde hace 1 semana?
+Se revisaron a fondo los registros internos de la aplicación en 
+
+C:\Users\Lima\AppData\Roaming\Antigravity IDE\logs
+. Se encontró la causa raíz exacta del fallo:
+
+Causa del problema
+A partir del 7 de octubre de 2026 (hace exactamente 5–6 días), tras una actualización interna del entorno del IDE, el componente de interfaz del chat comenzó a arrojar de forma persistente este error de inyección de dependencias en el proceso renderer:
+
+text
+[error] [createInstance] ace depends on UNKNOWN service agentSessions.: Error: [createInstance] ace depends on UNKNOWN service agentSessions.
+    at Gxr._createInstance (workbench.desktop.main.js:5986:1818)
+    at new Ffi (workbench.desktop.main.js:6655:9885)
+Qué significa: El módulo del panel de chat (ace / Antigravity Chat Experience) intenta inicializarse requiriendo el servicio central agentSessions (encargado de consultar y renderizar la lista y contenido de chats anteriores). Al no estar registrado dicho servicio en esa versión del workbench, la vista del historial se rompe en tiempo de carga, quedando en blanco o en carga infinita.
+Tus chats NO se han perdido: Todo el historial, transcripciones y código generado siguen intactos localmente en el disco duro:
+Transcripciones legibles: 
+
+C:\Users\Lima\.gemini\antigravity-ide\brain\<id>\.system_generated\logs\transcript.jsonl
+Bases de datos locales: 
+
+C:\Users\Lima\.gemini\antigravity-ide\conversations\*.db
+Cómo solucionarlo
+Actualizar el IDE: Ve a Help > Check for Updates (o reinstala la última versión de Antigravity IDE) para recibir el parche que corrige el registro del servicio agentSessions.
+Limpiar caché de sesión: Cierra el IDE y elimina o renombra la carpeta de caché en 
+
+C:\Users\Lima\AppData\Roaming\Antigravity IDE\Cache
+ antes de reabrirlo.

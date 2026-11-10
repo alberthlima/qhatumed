@@ -79,6 +79,29 @@ const isOfflineMode = ref(false)     // Modo Contingencia Fuera de Línea (RND 1
 const manualCafc = ref('')           // Código CAFC (Talonario preimpreso o contingencia)
 const manualInvoiceNumber = ref('')  // N° Factura manual del talonario
 const manualEmissionDateTime = ref('') // Fecha y hora exacta de emisión para contingencia / CAFC manual
+const activeCafcInfo = ref(null)     // Talonario CAFC vigente sincronizado desde siat-api-service
+
+const fetchActiveCafc = async () => {
+  try {
+    const res = await $api('/v1/siat/cafc')
+    if (res && Array.isArray(res.data) && res.data.length > 0) {
+      const vigente = res.data.find(c => c.is_active) || res.data[0]
+      activeCafcInfo.value = vigente
+    }
+  } catch (e) {
+    // Silencioso si no hay conexión
+  }
+}
+
+const applyActiveCafc = () => {
+  if (!activeCafcInfo.value) return
+  manualCafc.value = activeCafcInfo.value.codigo_cafc
+  const nextNum = Math.max(
+    Number(activeCafcInfo.value.numero_inicial || 1),
+    Number(activeCafcInfo.value.ultimo_numero_usado || 0) + 1
+  )
+  manualInvoiceNumber.value = String(nextNum)
+}
 const isAddClientDialog = ref(false)
 
 // Tipos de Documento SIAT
@@ -112,7 +135,7 @@ const quickCashAmounts = [10, 20, 50, 100, 200]
 const fetchProducts = async (search = '') => {
   try {
     isFetching.value = true
-    const response = await $api(`/v1/products?per_page=100&search=${encodeURIComponent(search)}`)
+    const response = await $api(`/v1/products?per_page=100&sort_by=stock&sort_order=desc&search=${encodeURIComponent(search)}`)
     products.value = response.data || response || []
   } catch (error) {
     console.error('Error fetching products:', error)
@@ -228,11 +251,14 @@ const setFiscalPreset = (type) => {
 // Norma SIN:
 // - Códigos especiales 99001, 99002, 99003 siempre llevan codigoExcepcion = 1 y tipoDoc = 5
 // - Emisión fuera de línea (isOfflineMode) con NIT (documentType = 5) siempre lleva codigoExcepcion = 1
+// - Nota aclaratoria SIN v1.0.48: codigoExcepcion = 1 aplica únicamente a tipoDocumento = 5 (NIT)
 watch([nitCi, documentType, isOfflineMode], ([num, docType, offline]) => {
   const cleanNum = String(num || '').trim()
   if (['99001', '99002', '99003'].includes(cleanNum)) {
     if (documentType.value !== 5) documentType.value = 5
     hasExceptionCode.value = true
+  } else if (docType !== 5) {
+    hasExceptionCode.value = false
   } else if (offline && docType === 5) {
     hasExceptionCode.value = true
   }
@@ -266,100 +292,159 @@ watch([nitCi, documentType], ([newVal, docType]) => {
   }
 })
 
+// Restricción numérica en Número de Tarjeta (SIAT)
+watch(cardNumber, (newCard) => {
+  if (!newCard) return
+  if (/[^\d]/.test(String(newCard))) {
+    cardNumber.value = String(newCard).replace(/\D/g, '')
+    toast.showWarning('El Número de Tarjeta es estrictamente numérico.', 'Restricción de Formato (SIN)')
+  }
+})
+
+let lastKeyWarnAt = 0
 // Bloqueo físico en teclado de caracteres no numéricos en la casilla NIT/CI (si es CI o NIT)
 const onNitCiKeypress = (e) => {
   if ([1, 5].includes(documentType.value)) {
-    if (!/^\d$/.test(e.key)) {
+    if (e.key && e.key.length === 1 && !/^\d$/.test(e.key)) {
       e.preventDefault()
+      const now = Date.now()
+      if (now - lastKeyWarnAt > 1200) {
+        lastKeyWarnAt = now
+        toast.showWarning(
+          `La casilla NIT/CI es de formato estrictamente numérico. No se permite ingresar letras ("${e.key}").`,
+          'Restricción de Formato (SIN)'
+        )
+      }
+    }
+  }
+}
+
+const onCardNumberKeypress = (e) => {
+  if (e.key && e.key.length === 1 && !/^\d$/.test(e.key)) {
+    e.preventDefault()
+    const now = Date.now()
+    if (now - lastKeyWarnAt > 1200) {
+      lastKeyWarnAt = now
+      toast.showWarning('El Número de Tarjeta solo admite dígitos numéricos.', 'Restricción Numérica (SIN)')
     }
   }
 }
 
 // Calcula monto de descuento en Bs. a partir de una expresión en Bs. o en % (soporta cascada ej: "10+5")
-const computeDiscountFromExpr = (baseAmount, rawExpr, mode) => {
-  const str = String(rawExpr ?? '').trim()
-  if (!str) return 0
-  if (mode === 'PCT') {
-    // Soporta descuentos porcentuales simples ("15") o en cascada ("10+5")
-    const parts = str.split('+').map(p => parseFloat(p.trim())).filter(n => !isNaN(n) && n > 0)
-    if (parts.length === 0) return 0
+// Retorna { amount, isHundredOrMore }
+const parseDiscountExpr = (baseAmount, rawExpr, mode) => {
+  let str = String(rawExpr ?? '').trim()
+  if (!str) return { amount: 0, isHundredOrMore: false, effectiveMode: mode }
+  let effectiveMode = mode
+  if (str.endsWith('%')) {
+    effectiveMode = 'PCT'
+    str = str.replace(/%/g, '').trim()
+  }
+  const parts = str.split('+').map(p => parseFloat(p.replace('%', '').trim())).filter(n => !isNaN(n) && n > 0)
+  if (parts.length === 0) return { amount: 0, isHundredOrMore: false, effectiveMode }
+
+  if (effectiveMode === 'PCT') {
+    if (parts.some(pct => pct >= 100)) {
+      return { amount: baseAmount, isHundredOrMore: true, effectiveMode }
+    }
     let remaining = baseAmount
     for (const pct of parts) {
-      const clampedPct = Math.min(100, Math.max(0, pct))
-      remaining = remaining * (1 - clampedPct / 100)
+      remaining = remaining * (1 - pct / 100)
     }
-    return Number(Math.max(0, baseAmount - remaining).toFixed(2))
+    const amt = Number(Math.max(0, baseAmount - remaining).toFixed(2))
+    return { amount: amt, isHundredOrMore: amt >= baseAmount, effectiveMode }
   } else {
-    const parts = str.split('+').map(p => parseFloat(p.trim())).filter(n => !isNaN(n) && n > 0)
-    const sumBs = parts.reduce((a, b) => a + b, 0)
-    return Number(Math.max(0, sumBs).toFixed(2))
+    const sumBs = Number(parts.reduce((a, b) => a + b, 0).toFixed(2))
+    return { amount: Math.max(0, sumBs), isHundredOrMore: sumBs >= baseAmount, effectiveMode }
   }
 }
 
-// Aplicar o quitar descuento individual a un producto (normado SIN: subTotal > 0, mínimo 0.01 Bs)
-const apply100Discount = (item) => {
-  if (item.discount > 0) {
-    item.discount = 0
-    item.discountInput = ''
-    toast.showInfo(`Descuento eliminado de ${item.name}`, 'Descuento')
-  } else {
-    const gross = grossOf(item)
-    // Norma SIN (XSD minExclusive 0.0): subTotal debe ser > 0, por lo que el descuento deja un residual de Bs. 0.01
-    const maxDiscount = Number(Math.max(0, gross - 0.01).toFixed(2))
-    item.discount = maxDiscount
-    item.discountMode = 'BS'
-    item.discountInput = String(maxDiscount)
-    toast.showSuccess(`Descuento individual aplicado (Bs. ${item.discount}, residual normado Bs. 0.01) a ${item.name}`, 'Descuento 100% (SIN)')
-  }
+const computeDiscountFromExpr = (baseAmount, rawExpr, mode) => {
+  return parseDiscountExpr(baseAmount, rawExpr, mode).amount
+}
+
+// Quitar descuento individual de un producto
+const clearItemDiscount = (item) => {
+  item.discount = 0
+  item.discountInput = ''
 }
 
 // Importe bruto de un ítem (cantidad x precio), tope del descuento por ítem
 const grossOf = (item) => Number((Number(item.quantity || 0) * Number(item.sale_price || 0)).toFixed(2))
 
-const toggleItemDiscountMode = (item) => {
-  item.discountMode = item.discountMode === 'PCT' ? 'BS' : 'PCT'
+const setItemDiscountMode = (item, newMode) => {
+  if (item.discountMode === newMode) return
+  item.discountMode = newMode
   item.discountInput = ''
   item.discount = 0
 }
 
-// Descuento por ítem manual (en Bs. o %, con soporte de cascada ej. 10+5), acotado a gross - 0.01
-const setItemDiscount = (item, event) => {
-  const raw = event.target.value
-  item.discountInput = raw
-  const gross = grossOf(item)
-  let val = computeDiscountFromExpr(gross, raw, item.discountMode || 'BS')
-  const max = Number(Math.max(0, gross - 0.01).toFixed(2))
-  if (val > max) {
-    val = max
-    toast.showWarning(`Por norma del SIN (XSD), el subtotal del ítem debe ser mayor a 0. Descuento ajustado a Bs. ${max.toFixed(2)} (subtotal 0.01 Bs).`, 'Tope Normativo SIN')
-  }
-  item.discount = Number(val.toFixed(2))
+const toggleItemDiscountMode = (item) => {
+  setItemDiscountMode(item, item.discountMode === 'PCT' ? 'BS' : 'PCT')
 }
 
-const toggleGlobalDiscountMode = () => {
-  discountMode.value = discountMode.value === 'PCT' ? 'BS' : 'PCT'
+// Descuento por ítem manual (en Bs. o %, con soporte de cascada ej. 10+5).
+// Norma SIN (Factura Compra-Venta Sector 1): NO existe el valor de facturación en cero ni descuento del 100%.
+const setItemDiscount = (item, event) => {
+  const raw = event.target.value
+  const gross = grossOf(item)
+  const parsed = parseDiscountExpr(gross, raw, item.discountMode || 'BS')
+  if (parsed.effectiveMode !== item.discountMode) {
+    item.discountMode = parsed.effectiveMode
+  }
+
+  if (parsed.isHundredOrMore || parsed.amount >= gross) {
+    item.discount = 0
+    item.discountInput = ''
+    event.target.value = ''
+    toast.showError(
+      `Restricción Normativa SIN: No se permite aplicar un descuento del 100% (o igual/mayor a Bs. ${gross.toFixed(2)}) en "${item.name}". No existe el valor de facturación en cero.`,
+      'Descuento 100% No Permitido'
+    )
+    return
+  }
+
+  item.discountInput = raw
+  item.discount = Number(parsed.amount.toFixed(2))
+}
+
+const setGlobalDiscountMode = (newMode) => {
+  if (discountMode.value === newMode) return
+  discountMode.value = newMode
   discountInput.value = ''
   discount.value = 0
 }
 
+const toggleGlobalDiscountMode = () => {
+  setGlobalDiscountMode(discountMode.value === 'PCT' ? 'BS' : 'PCT')
+}
+
 const onGlobalDiscountInput = (event) => {
   const raw = event.target.value
-  discountInput.value = raw
   const sub = Number(subtotal.value.toFixed(2))
   if (sub <= 0) {
     discount.value = 0
+    discountInput.value = ''
     return
   }
-  let val = computeDiscountFromExpr(sub, raw, discountMode.value)
-  const maxAllowed = paymentMethod.value === 27 ? sub : Number(Math.max(0, sub - 0.01).toFixed(2))
-  if (val > maxAllowed) {
-    val = maxAllowed
-    toast.showWarning(
-      `Restricción Normativa SIN: No se permite aplicar un descuento global del 100% que deje la factura en Bs. 0.00. Tope aplicado: Bs. ${maxAllowed.toFixed(2)}.`,
-      'Tope Normativo SIN'
-    )
+  const parsed = parseDiscountExpr(sub, raw, discountMode.value)
+  if (parsed.effectiveMode !== discountMode.value) {
+    discountMode.value = parsed.effectiveMode
   }
-  discount.value = Number(val.toFixed(2))
+
+  if (paymentMethod.value !== 27 && (parsed.isHundredOrMore || parsed.amount >= sub)) {
+    discount.value = 0
+    discountInput.value = ''
+    event.target.value = ''
+    toast.showError(
+      `Restricción Normativa SIN: No se permite emitir factura con 100% de descuento global (o igual/mayor al subtotal de Bs. ${sub.toFixed(2)}). No existe el valor de facturación en cero.`,
+      'Descuento Global 100% No Permitido'
+    )
+    return
+  }
+
+  discountInput.value = raw
+  discount.value = Number(parsed.amount.toFixed(2))
 }
 
 // Si cambia la cantidad, recalcular o ajustar el descuento del ítem para que nunca deje el subtotal en 0
@@ -528,6 +613,25 @@ const setQuickCash = (amount) => {
 const checkout = async () => {
   if (cart.value.length === 0) return
 
+  // 0. Validación Normativa SIN de Descuentos (No existe facturación en cero ni 100% de descuento en Sector 1)
+  for (const item of cart.value) {
+    const gross = grossOf(item)
+    if (Number(item.discount || 0) >= gross) {
+      toast.showError(
+        `Restricción Normativa SIN: El ítem "${item.name}" no puede tener un descuento del 100% (Bs. ${Number(item.discount).toFixed(2)} sobre Bs. ${gross.toFixed(2)}). No existe el valor de facturación en cero.`,
+        'Descuento 100% No Permitido'
+      )
+      return
+    }
+  }
+  if (paymentMethod.value !== 27 && (Number(discount.value || 0) >= subtotal.value || total.value <= 0)) {
+    toast.showError(
+      'Restricción Normativa SIN: No se permite emitir factura con 100% de descuento global ni valor de facturación en cero (Bs. 0.00).',
+      'Valor Cero No Permitido'
+    )
+    return
+  }
+
   // 1. Validación SIAT de Tarjeta (Exigida por normativa cuando el método incluye Tarjeta: 2 = Tarjeta, 10 = Efectivo-Tarjeta)
   if ([2, 10].includes(paymentMethod.value) && isInvoice.value) {
     if (!cardNumber.value || cardNumber.value.trim().length < 4) {
@@ -652,6 +756,7 @@ const handleGlobalKeydown = (e) => {
 onMounted(() => {
   fetchProducts()
   fetchCustomers()
+  fetchActiveCafc()
   window.addEventListener('keydown', handleGlobalKeydown)
 })
 
@@ -897,34 +1002,48 @@ watch(searchQuery, (newVal) => {
                     <div class="item-table-lab">{{ item.laboratory?.name || 'GENÉRICO' }}</div>
                     <!-- Descuento por ítem (SIAT: montoDescuento, en Bs. o % / cascada ej. 10+5) -->
                     <div class="d-flex align-center mt-1 flex-wrap" style="gap: 4px;">
-                      <button
-                        type="button"
-                        class="stepper-btn font-weight-bold text-warning"
-                        style="width: auto; padding: 0 5px; font-size: 10px;"
-                        title="Cambiar entre descuento en Bs. o en % (soporta cascada ej. 10+5)"
-                        @click="toggleItemDiscountMode(item)"
-                      >
-                        Desc. {{ item.discountMode === 'PCT' ? '%' : 'Bs.' }}
-                      </button>
+                      <div class="d-inline-flex border rounded overflow-hidden">
+                        <button
+                          type="button"
+                          class="stepper-btn font-weight-bold"
+                          :class="item.discountMode !== 'PCT' ? 'bg-warning text-white' : 'text-medium-emphasis'"
+                          style="width: auto; padding: 0 5px; font-size: 10px; border: none; border-radius: 0;"
+                          title="Descuento en Bolivianos (Bs.)"
+                          @click="setItemDiscountMode(item, 'BS')"
+                        >
+                          Bs.
+                        </button>
+                        <button
+                          type="button"
+                          class="stepper-btn font-weight-bold"
+                          :class="item.discountMode === 'PCT' ? 'bg-warning text-white' : 'text-medium-emphasis'"
+                          style="width: auto; padding: 0 5px; font-size: 10px; border: none; border-radius: 0;"
+                          title="Descuento en Porcentaje (%) o Escalonado (ej. 10+5)"
+                          @click="setItemDiscountMode(item, 'PCT')"
+                        >
+                          %
+                        </button>
+                      </div>
                       <input
                         type="text"
                         :value="item.discountInput ?? (item.discount || '')"
                         :placeholder="item.discountMode === 'PCT' ? 'Ej: 10 o 10+5' : '0.00'"
                         class="discount-mini-input"
-                        style="width: 72px;"
+                        style="width: 74px;"
                         @change="setItemDiscount(item, $event)"
                       />
-                      <span v-if="item.discountMode === 'PCT' && item.discount > 0" class="text-caption text-warning font-weight-bold" style="font-size: 10px;">
+                      <span v-if="item.discount > 0" class="text-caption text-warning font-weight-bold" style="font-size: 10px;">
                         (-Bs. {{ Number(item.discount).toFixed(2) }})
                       </span>
                       <button
+                        v-if="item.discount > 0"
                         type="button"
-                        class="stepper-btn"
+                        class="stepper-btn text-error"
                         style="width: auto; padding: 0 5px; font-size: 10px;"
-                        :title="item.discount > 0 ? 'Quitar descuento' : 'Aplicar descuento del 100%'"
-                        @click="apply100Discount(item)"
+                        title="Quitar descuento del ítem"
+                        @click="clearItemDiscount(item)"
                       >
-                        {{ item.discount > 0 ? 'Quitar' : '100%' }}
+                        Quitar
                       </button>
                     </div>
                   </td>
@@ -985,15 +1104,28 @@ watch(searchQuery, (newVal) => {
                 <span v-if="discount > 0" class="ms-1 text-caption">(-Bs. {{ Number(discount).toFixed(2) }})</span>
               </span>
               <div class="d-flex align-center" style="gap: 4px;">
-                <button
-                  type="button"
-                  class="stepper-btn font-weight-bold text-warning"
-                  style="width: auto; padding: 0 6px; font-size: 11px; height: 26px;"
-                  title="Alternar entre Bs. y % (soporta cascada ej. 10+5)"
-                  @click="toggleGlobalDiscountMode"
-                >
-                  {{ discountMode === 'PCT' ? '%' : 'Bs.' }}
-                </button>
+                <div class="d-inline-flex border rounded overflow-hidden">
+                  <button
+                    type="button"
+                    class="stepper-btn font-weight-bold"
+                    :class="discountMode !== 'PCT' ? 'bg-warning text-white' : 'text-medium-emphasis'"
+                    style="width: auto; padding: 0 6px; font-size: 11px; height: 26px; border: none; border-radius: 0;"
+                    title="Descuento Global en Bolivianos (Bs.)"
+                    @click="setGlobalDiscountMode('BS')"
+                  >
+                    Bs.
+                  </button>
+                  <button
+                    type="button"
+                    class="stepper-btn font-weight-bold"
+                    :class="discountMode === 'PCT' ? 'bg-warning text-white' : 'text-medium-emphasis'"
+                    style="width: auto; padding: 0 6px; font-size: 11px; height: 26px; border: none; border-radius: 0;"
+                    title="Descuento Global en Porcentaje (%) o Escalonado (ej. 10+5)"
+                    @click="setGlobalDiscountMode('PCT')"
+                  >
+                    %
+                  </button>
+                </div>
                 <input 
                   type="text" 
                   :value="discountInput" 
@@ -1225,14 +1357,16 @@ watch(searchQuery, (newVal) => {
             <VTextField 
               v-model="cardNumber" 
               label="Número o Últimos 4 Dígitos de Tarjeta" 
-              placeholder="Ej. 4567 o 4567000000001234"
+              placeholder="Ej. 4567000000001234"
+              maxlength="16"
               variant="outlined" 
               density="comfortable" 
               prepend-inner-icon="ri-bank-card-line"
               hide-details
+              @keypress="onCardNumberKeypress"
             />
             <div class="text-caption text-medium-emphasis mt-1">
-              El SIAT enmascara automáticamente los dígitos centrales por seguridad bancaria.
+              El SIAT enmascara automáticamente los 8 dígitos centrales con ceros (ej. 4567000000001234).
             </div>
           </div>
 
@@ -1244,14 +1378,16 @@ watch(searchQuery, (newVal) => {
             <VTextField 
               v-model="cardNumber" 
               label="Número o Últimos 4 Dígitos de Tarjeta" 
-              placeholder="Ej. 4567 o 4567000000001234"
+              placeholder="Ej. 4567000000001234"
+              maxlength="16"
               variant="outlined" 
               density="comfortable" 
               prepend-inner-icon="ri-bank-card-line"
               hide-details
+              @keypress="onCardNumberKeypress"
             />
             <div class="text-caption text-medium-emphasis mt-1">
-              El SIAT enmascara automáticamente los dígitos centrales por seguridad bancaria.
+              El SIAT enmascara automáticamente los 8 dígitos centrales con ceros (ej. 4567000000001234).
             </div>
           </div>
 
@@ -1296,8 +1432,13 @@ watch(searchQuery, (newVal) => {
                 />
               </VCol>
             </VRow>
-            <div class="text-caption text-medium-emphasis">
-              Por norma del SIN, el pago con Gift Card permite registrar la factura sin requerir pago adicional en efectivo al comprador (monto a pagar 0 Bs).
+            <div class="text-caption font-weight-bold mt-1" :class="Number(giftCardAmount || 0) < total ? 'text-warning' : 'text-success'">
+              <template v-if="Number(giftCardAmount || 0) > 0 && Number(giftCardAmount || 0) < total">
+                Pago Combinado Efectivo + Gift Card (Código SIAT 35) — Saldo a Pagar / Base Crédito Fiscal: Bs. {{ Math.max(0, total - Number(giftCardAmount || 0)).toFixed(2) }}
+              </template>
+              <template v-else>
+                Cubierto al 100% con Gift Card (Código SIAT 27) — Monto a Pagar: Bs. 0.00 | Base Crédito Fiscal: Bs. 0.00
+              </template>
             </div>
           </div>
 
@@ -1345,6 +1486,15 @@ watch(searchQuery, (newVal) => {
             </VAlert>
 
             <!-- Opciones de Talonario Manual con CAFC (RND 102100000011) -->
+            <div v-if="isInvoice && isOfflineMode && activeCafcInfo" class="mt-2 d-flex align-center justify-space-between flex-wrap gap-1 pa-2 rounded bg-warning-lighten-5 border border-warning">
+              <div class="text-caption">
+                <strong>Talonario CAFC Central:</strong> <code>{{ activeCafcInfo.codigo_cafc }}</code>
+                (Rango {{ activeCafcInfo.numero_inicial }}–{{ activeCafcInfo.numero_final }} · Sig. N° #{{ Math.max(Number(activeCafcInfo.numero_inicial || 1), Number(activeCafcInfo.ultimo_numero_usado || 0) + 1) }})
+              </div>
+              <VBtn size="x-small" color="warning" variant="flat" class="font-weight-bold" @click="applyActiveCafc">
+                <VIcon start icon="ri-magic-line" size="14" /> Autocompletar CAFC
+              </VBtn>
+            </div>
             <VRow v-if="isInvoice && isOfflineMode" density="compact" class="mt-2">
               <VCol cols="12" sm="4">
                 <VTextField

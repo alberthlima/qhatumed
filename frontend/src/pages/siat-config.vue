@@ -45,6 +45,35 @@ const newPVData = ref({
   set_as_active: true
 })
 
+// ── PERFIL FISCAL CENTRALIZADO EN SIAT-API-SERVICE ──
+const siatProfile = ref(null)
+const isLoadingProfile = ref(false)
+const profileError = ref('')
+
+const fetchSiatProfile = async () => {
+  try {
+    isLoadingProfile.value = true
+    profileError.value = ''
+    const res = await $api('/v1/siat/perfil')
+    if (res && res.success && res.data) {
+      siatProfile.value = res.data
+      formData.value.nit = res.data.nit || formData.value.nit
+      formData.value.legal_name = res.data.razon_social || formData.value.legal_name
+      formData.value.siat_modality = Number(res.data.modalidad || formData.value.siat_modality)
+      formData.value.siat_environment = Number(res.data.ambiente || formData.value.siat_environment)
+      formData.value.siat_system_code = res.data.codigo_sistema || formData.value.siat_system_code
+    } else {
+      siatProfile.value = null
+      profileError.value = res?.error || 'No se pudo sincronizar el perfil con siat-api-service.'
+    }
+  } catch (e) {
+    siatProfile.value = null
+    profileError.value = e.message || 'Motor SIAT no disponible.'
+  } finally {
+    isLoadingProfile.value = false
+  }
+}
+
 const loadSettings = async () => {
     try {
         const response = await $api('/v1/settings')
@@ -68,7 +97,9 @@ const saveConfig = async () => {
             body: formData.value
         })
         currentPosCode.value = Number(formData.value.siat_pos_code || 0)
-        toast.showSuccess('Configuración Empresarial y SIAT guardada exitosamente.', 'Éxito')
+        await fetchSiatProfile()
+        await fetchPuntosVenta()
+        toast.showSuccess('Vinculación con Motor SIAT guardada y sincronizada exitosamente.', 'Éxito')
     } catch (e) {
         toast.showError('Error al guardar la configuración: ' + (e.response?._data?.message || e.message), 'Error al Guardar')
     } finally {
@@ -188,6 +219,7 @@ const handleSelectActivePV = async (pv) => {
 
 onMounted(async () => {
     await loadSettings()
+    await fetchSiatProfile()
     await fetchPuntosVenta()
 })
 </script>
@@ -200,8 +232,8 @@ onMounted(async () => {
         <!-- Barra de Navegación por Pestañas -->
         <VTabs v-model="activeTab" class="mb-4" color="primary">
           <VTab value="config" class="font-weight-bold">
-            <VIcon start icon="ri-settings-4-line" />
-            1. Credenciales y Empresa
+            <VIcon start icon="ri-links-line" />
+            1. Vinculación SIAT y Terminal
           </VTab>
           <VTab value="pos_management" class="font-weight-bold">
             <VIcon start icon="ri-computer-line" />
@@ -212,88 +244,110 @@ onMounted(async () => {
 
         <VWindow v-model="activeTab">
           <!-- ========================================== -->
-          <!-- PESTAÑA 1: CONFIGURACIÓN GENERAL Y CREDENCIALES -->
+          <!-- PESTAÑA 1: VINCULACIÓN CON SIAT-API-SERVICE -->
           <!-- ========================================== -->
           <VWindowItem value="config">
             <VCard elevation="3" class="rounded-xl border">
-              <VCardTitle class="bg-primary text-white py-4 d-flex align-center font-weight-bold">
-                <VIcon icon="ri-government-line" class="mr-3" size="28" />
-                Configuración Empresarial y SIAT
+              <VCardTitle class="bg-primary text-white py-4 d-flex flex-wrap justify-space-between align-center font-weight-bold">
+                <div class="d-flex align-center">
+                  <VIcon icon="ri-links-line" class="mr-3" size="28" />
+                  <span>Vinculación con el Motor Central SIAT</span>
+                </div>
+                <VBtn variant="tonal" color="white" size="small" :loading="isLoadingProfile" @click="fetchSiatProfile">
+                  <VIcon start icon="ri-refresh-line" /> Sincronizar con Motor SIAT
+                </VBtn>
               </VCardTitle>
               
               <VCardText class="pt-6">
                 <VAlert color="info" variant="tonal" icon="ri-information-line" class="mb-6">
-                  Los datos guardados aquí configuran la identidad tributaria y credenciales oficiales para declarar ante el Servicio de Impuestos Nacionales.
+                  En este cliente solo se configura la <strong>API Key de Vinculación</strong> y el <strong>Punto de Venta / Sucursal</strong> de esta terminal. Las credenciales fiscales del SIN (NIT, Razón Social, Modalidad 1 o 2, Ambiente, Código de Sistema, Certificado <code>.p12</code> y Talonarios CAFC) se administran centralmente desde <strong>siat-api-service</strong> (<code>http://localhost:8001/admin</code>).
                 </VAlert>
 
                 <VForm @submit.prevent="saveConfig">
-                  <div class="text-subtitle-1 font-weight-black text-primary mb-3 text-uppercase">1. Datos de Farmacia</div>
-                  <VRow class="mb-4">
-                    <VCol cols="12" md="6">
-                      <VTextField v-model="formData.trade_name" label="Nombre Comercial (Frontend)" variant="outlined" prepend-inner-icon="ri-store-2-line" />
-                    </VCol>
-                    <VCol cols="12" md="6">
-                      <VTextField v-model="formData.legal_name" label="Razón Social (Para Facturación)" variant="outlined" prepend-inner-icon="ri-building-4-line" />
-                    </VCol>
-                  </VRow>
-
-                  <VDivider class="mb-4"/>
-
-                  <div class="text-subtitle-1 font-weight-black text-primary mb-3 text-uppercase">2. Credenciales SIAT</div>
+                  <div class="text-subtitle-1 font-weight-black text-primary mb-3 text-uppercase">1. Datos de Vinculación y Terminal</div>
                   <VRow>
-                    <VCol cols="12" md="4">
-                      <VTextField v-model="formData.nit" label="NIT" variant="outlined" prepend-inner-icon="ri-fingerprint-line" />
+                    <VCol cols="12" md="6">
+                      <VTextField v-model="formData.trade_name" label="Nombre Comercial (Mostrador)" variant="outlined" prepend-inner-icon="ri-store-2-line" />
                     </VCol>
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="3">
                       <VTextField v-model.number="formData.siat_branch_code" label="Código Sucursal" type="number" variant="outlined" prepend-inner-icon="ri-map-pin-line" />
                     </VCol>
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="3">
                       <VTextField v-model.number="formData.siat_pos_code" label="Punto de Venta Asignado" type="number" variant="outlined" prepend-inner-icon="ri-computer-line" />
                     </VCol>
-                    <VCol cols="12" md="4">
-                      <VTextField v-model="formData.siat_system_code" label="Código de Sistema (SIN)" variant="outlined" prepend-inner-icon="ri-qr-code-line" />
-                    </VCol>
-                    <VCol cols="12" md="4">
-                      <VSelect 
-                        v-model.number="formData.siat_modality" 
-                        :items="[
-                          { title: '1 - Electrónica en Línea (Firma Digital .p12)', value: 1 },
-                          { title: '2 - Computarizada en Línea', value: 2 }
-                        ]" 
-                        label="Modalidad de Facturación *" 
-                        variant="outlined" 
-                        prepend-inner-icon="ri-shield-keyhole-line" 
-                      />
-                    </VCol>
-                    <VCol cols="12" md="4">
-                      <VSelect 
-                        v-model.number="formData.siat_environment" 
-                        :items="[{title:'Piloto (Pruebas)', value:2}, {title:'Producción', value:1}]" 
-                        label="Ambiente SIAT" 
-                        variant="outlined" 
-                        prepend-inner-icon="ri-server-line" 
-                      />
-                    </VCol>
                     <VCol cols="12">
-                      <VTextarea 
+                      <VTextField 
                         v-model="formData.siat_token" 
-                        label="Token Delegado" 
+                        label="API Key de Vinculación SIAT (X-API-KEY: siat_...) *" 
                         variant="outlined" 
-                        rows="3" 
                         prepend-inner-icon="ri-key-2-line" 
-                        hint="El token provisto por la plataforma del SIAT."
+                        placeholder="Ej: siat_live_key_9941a87bf23d8c4e01"
+                        hint="Llave única generada al registrar la empresa en http://localhost:8001/admin/empresas"
+                        persistent-hint
                       />
                     </VCol>
                   </VRow>
 
-                  <VDivider class="my-6" />
-
-                  <div class="d-flex flex-wrap gap-4 mt-6">
+                  <div class="d-flex flex-wrap gap-4 mt-5">
                     <VBtn type="submit" color="success" :loading="isLoading" size="large" elevation="2" class="font-weight-bold">
-                      <VIcon start icon="ri-save-line" /> Guardar Configuración
+                      <VIcon start icon="ri-save-line" /> Guardar Vinculación
                     </VBtn>
                   </div>
                 </VForm>
+
+                <VDivider class="my-6" />
+
+                <!-- ESTADO SINCRONIZADO EN TIEMPO REAL DESDE SIAT-API-SERVICE -->
+                <div class="d-flex align-center justify-space-between mb-3">
+                  <div class="text-subtitle-1 font-weight-black text-primary text-uppercase">
+                    2. Perfil Fiscal Activo en Motor SIAT (Solo Lectura)
+                  </div>
+                  <VChip v-if="siatProfile" color="success" size="small" variant="flat" class="font-weight-bold" prepend-icon="ri-checkbox-circle-line">
+                    Conectado a siat-api-service
+                  </VChip>
+                  <VChip v-else color="error" size="small" variant="tonal" class="font-weight-bold" prepend-icon="ri-error-warning-line">
+                    Sin conexión con motor SIAT
+                  </VChip>
+                </div>
+
+                <VAlert v-if="profileError" color="warning" variant="tonal" class="mb-4" icon="ri-alert-line">
+                  {{ profileError }}
+                </VAlert>
+
+                <VRow v-if="siatProfile" density="comfortable">
+                  <VCol cols="12" md="4">
+                    <div class="pa-3 rounded-lg border bg-grey-lighten-5">
+                      <div class="text-caption text-medium-emphasis">Contribuyente / Razón Social</div>
+                      <div class="font-weight-bold text-body-1">{{ siatProfile.razon_social }}</div>
+                      <div class="text-caption text-primary font-weight-bold">NIT: {{ siatProfile.nit }}</div>
+                    </div>
+                  </VCol>
+                  <VCol cols="12" md="4">
+                    <div class="pa-3 rounded-lg border bg-grey-lighten-5">
+                      <div class="text-caption text-medium-emphasis">Modalidad Activa en Motor SIAT</div>
+                      <div class="mt-1">
+                        <VChip :color="siatProfile.modalidad === 1 ? 'deep-purple' : 'info'" size="small" variant="flat" class="font-weight-bold">
+                          {{ siatProfile.modalidad === 1 ? '1 - ELECTRÓNICA EN LÍNEA (.p12)' : '2 - COMPUTARIZADA EN LÍNEA' }}
+                        </VChip>
+                      </div>
+                      <div class="text-caption text-medium-emphasis mt-1">
+                        Ambiente: <strong>{{ siatProfile.ambiente === 1 ? '1 - Producción' : '2 - Piloto / Pruebas' }}</strong>
+                      </div>
+                    </div>
+                  </VCol>
+                  <VCol cols="12" md="4">
+                    <div class="pa-3 rounded-lg border bg-grey-lighten-5">
+                      <div class="text-caption text-medium-emphasis">Código Sistema & CAFC Vigente</div>
+                      <div class="font-mono text-caption font-weight-bold">{{ siatProfile.codigo_sistema }}</div>
+                      <div class="mt-1">
+                        <VChip v-if="siatProfile.cafcs && siatProfile.cafcs.length" color="warning" size="x-small" variant="flat" class="font-weight-bold">
+                          CAFC: {{ siatProfile.cafcs[0].codigo_cafc }} ({{ siatProfile.cafcs[0].numero_inicial }}-{{ siatProfile.cafcs[0].numero_final }})
+                        </VChip>
+                        <span v-else class="text-caption text-disabled">Sin CAFC registrado</span>
+                      </div>
+                    </div>
+                  </VCol>
+                </VRow>
               </VCardText>
             </VCard>
           </VWindowItem>

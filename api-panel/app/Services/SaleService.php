@@ -80,13 +80,10 @@ class SaleService
                 $discount = round((float) ($itemData['discount'] ?? 0), 2);
                 $grossAmount = round($quantityNeeded * $unitPrice, 2);
 
-                // Norma SIN: subTotal = (cantidad x precioUnitario) - montoDescuento.
-                // En el XSD oficial del SIN (Factura Compra Venta), subTotal tiene la restricción minExclusive="0.0"
-                // (debe ser estrictamente mayor a 0). Si se aplica un descuento del 100%, el tope legal es (importe bruto - 0.01 Bs).
-                if ($discount >= $grossAmount && $grossAmount > 0.01) {
-                    $discount = round($grossAmount - 0.01, 2);
-                } elseif ($discount > $grossAmount) {
-                    throw new \Exception("Descuento inválido en {$product->name}: el descuento (Bs. {$discount}) no puede superar el importe del ítem (Bs. {$grossAmount}).");
+                // Norma SIN (Factura Compra-Venta Sector 1): subTotal = (cantidad x precioUnitario) - montoDescuento.
+                // No existe el valor de facturación en cero ni se permite descuento individual del 100%.
+                if ($discount >= $grossAmount) {
+                    throw new \Exception("Restricción Normativa SIN: No se permite aplicar un descuento individual del 100% o superior (Bs. {$discount}) sobre el importe del ítem {$product->name} (Bs. {$grossAmount}). No existe el valor de facturación en cero.");
                 }
                 
                 $itemSubtotal = round($grossAmount - $discount, 2);
@@ -277,9 +274,10 @@ class SaleService
         $lastIndex = count($chunks) - 1;
 
         foreach ($chunks as $i => [$qty, $purchaseItemId, $batchCost]) {
+            $maxLineDiscount = round(max(0, ($qty * $unitPrice) - 0.01), 2);
             $lineDiscount = ($i === $lastIndex)
-                ? $discountLeft
-                : min($discountLeft, round(($qty / $quantityNeeded) * $discount, 2));
+                ? min($maxLineDiscount, $discountLeft)
+                : min($maxLineDiscount, $discountLeft, round(($qty / $quantityNeeded) * $discount, 2));
             $discountLeft = round($discountLeft - $lineDiscount, 2);
 
             SaleItem::create([
@@ -373,7 +371,7 @@ class SaleService
         // Validación de Plazo de Reversión (RND 102100000011 Art. 45)
         if ($sale->sale_date) {
             $fechaEmision = \Carbon\Carbon::parse($sale->sale_date)->timezone('America/La_Paz');
-            $limiteReversion = $fechaEmision->copy()->addMonth()->startOfMonth()->addDays(9)->endOfDay();
+            $limiteReversion = $fechaEmision->copy()->addMonth()->startOfMonth()->addDays(8)->endOfDay();
             if (\Carbon\Carbon::now('America/La_Paz')->greaterThan($limiteReversion)) {
                 $fEmit = $fechaEmision->format('d/m/Y');
                 $fLim = $limiteReversion->format('d/m/Y');

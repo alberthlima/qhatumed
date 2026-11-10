@@ -53,11 +53,14 @@ Route::group([
         Route::post('notifications/mark-unread', [\App\Http\Controllers\Api\V1\NotificationController::class, 'markAsUnread']);
 
 
-        // Gestión Oficial de Puntos de Venta (SIAT / SIN - RND 102100000011)
+        // Gestión Oficial de Puntos de Venta y Talonarios CAFC (SIAT / SIN - RND 102100000011)
+        Route::get('siat/perfil', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'profile']);
         Route::get('siat/puntos-venta', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'index']);
         Route::post('siat/puntos-venta', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'store']);
         Route::post('siat/puntos-venta/cierre', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'close']);
         Route::post('siat/puntos-venta/seleccionar', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'select']);
+        Route::get('siat/cafc', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'listCafc']);
+        Route::post('siat/cafc', [\App\Http\Controllers\Api\V1\SiatPuntoVentaController::class, 'storeCafc']);
 
         // Core Entities
         Route::post('products/{product}/associate-barcode', [\App\Http\Controllers\Api\V1\ProductController::class, 'associateBarcode']);

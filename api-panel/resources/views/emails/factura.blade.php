@@ -39,10 +39,17 @@
 <body>
     @php
         $op = $tipoOperacion ?? 'EMISION';
+        $companySetting = \App\Models\CompanySetting::first();
+        $emisorRazonSocial = $companySetting?->legal_name ?: 'LIMA ALBERTH MAYRON';
+        $emisorNit = $companySetting?->nit ?: '6789406016';
+        $modalidadCodigo = (int) ($companySetting?->siat_modality ?? 1);
+        $modalidadTexto = $modalidadCodigo === 1 ? '1 - Electrónica en Línea' : '2 - Computarizada en Línea';
+        $sucursalCodigo = (int) ($companySetting?->siat_branch_code ?? 0);
+        $posCodigo = (int) ($companySetting?->siat_pos_code ?? 0);
     @endphp
     <div class="container">
         <div class="header {{ $op === 'ANULACION' ? 'header-annul' : ($op === 'REVERSION' ? 'header-revert' : '') }}">
-            <h1>FARMACIA MISALUD</h1>
+            <h1>{{ $emisorRazonSocial }}</h1>
             <p class="subtitle">
                 @if($op === 'ANULACION')
                     NOTIFICACIÓN OFICIAL DE ANULACIÓN DE FACTURA • SIAT / SIN
@@ -99,19 +106,35 @@
                         </td>
                     </tr>
                     <tr>
-                        <td class="label">Fecha y Hora de Emisión:</td>
-                        <td class="value">{{ \Carbon\Carbon::parse($sale->sale_date ?? now())->timezone('America/La_Paz')->format('d/m/Y H:i') }}</td>
+                        <td class="label">Emisor (Razón Social / NIT):</td>
+                        <td class="value"><strong>{{ $emisorRazonSocial }}</strong> (NIT: {{ $emisorNit }})</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Modalidad de Facturación:</td>
+                        <td class="value">
+                            <span class="badge badge-sector">{{ $modalidadTexto }}</span>
+                        </td>
                     </tr>
                     <tr>
                         <td class="label">Documento Sector:</td>
                         <td class="value">
-                            <span class="badge badge-sector">Documento Sector 1: Factura Compra Venta</span>
+                            <span class="badge badge-sector">Sector 1: Factura Compra Venta (Con Derecho a Crédito Fiscal)</span>
                         </td>
+                    </tr>
+                    <tr>
+                        <td class="label">Fecha y Hora de Emisión:</td>
+                        <td class="value">{{ \Carbon\Carbon::parse($sale->sale_date ?? now())->timezone('America/La_Paz')->format('d/m/Y H:i') }}</td>
                     </tr>
                     <tr>
                         <td class="label">NIT / CI del Cliente:</td>
                         <td class="value">{{ $sale->nit_ci }}{{ $sale->customer?->complement ? '-' . $sale->customer->complement : '' }}</td>
                     </tr>
+                    @if(($sale->additional_discount ?? 0) > 0)
+                    <tr>
+                        <td class="label">Descuento Adicional Global:</td>
+                        <td class="value">Bs. {{ number_format($sale->additional_discount, 2) }}</td>
+                    </tr>
+                    @endif
                     <tr>
                         <td class="label">Monto Total Facturado:</td>
                         <td class="value" style="font-size: 15px; color: #0284c7;"><strong>Bs. {{ number_format($sale->total_amount, 2) }}</strong></td>
@@ -150,13 +173,13 @@
 
         <div class="footer">
             <div class="leyenda-legal">
-                "ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO DE ÉSTA SERÁ SANCIONADO DE ACUERDO A LEY"
+                "ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO SERÁ SANCIONADO PENALMENTE DE ACUERDO A LEY"
             </div>
             <div>
                 {{ $sale->leyenda ?? 'Ley N° 453: El proveedor de servicios debe prioritariamente informar sobre las características de los productos.' }}
             </div>
             <div style="margin-top: 12px;">
-                © {{ date('Y') }} Farmacia Misalud • Casa Matriz (Sucursal 0, Punto de Venta 0) • Bolivia
+                © {{ date('Y') }} {{ $emisorRazonSocial }} • NIT {{ $emisorNit }} • Sucursal {{ $sucursalCodigo }}, Punto de Venta {{ $posCodigo }} • La Paz, Bolivia
             </div>
         </div>
     </div>

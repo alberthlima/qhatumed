@@ -64,17 +64,31 @@ watch(phone, (newPhone) => {
 })
 
 // Bloqueo físico en teclado al escribir letras en cuadros numéricos
+let lastKeyWarnAt = 0
 const onDocNumberKeypress = (e) => {
   if ([1, 5].includes(document_type.value)) {
-    if (!/^\d$/.test(e.key)) {
+    if (e.key && e.key.length === 1 && !/^\d$/.test(e.key)) {
       e.preventDefault()
+      const now = Date.now()
+      if (now - lastKeyWarnAt > 1200) {
+        lastKeyWarnAt = now
+        toast.showWarning(
+          `La casilla NIT/CI es de formato estrictamente numérico. Se bloqueó el carácter "${e.key}".`,
+          'Restricción Numérica (SIN)'
+        )
+      }
     }
   }
 }
 
 const onPhoneKeypress = (e) => {
-  if (!/^\d$/.test(e.key) && !(e.key === '+' && (!phone.value || phone.value.length === 0))) {
+  if (e.key && e.key.length === 1 && !/^\d$/.test(e.key) && !(e.key === '+' && (!phone.value || phone.value.length === 0))) {
     e.preventDefault()
+    const now = Date.now()
+    if (now - lastKeyWarnAt > 1200) {
+      lastKeyWarnAt = now
+      toast.showWarning('El campo Celular / WhatsApp solo admite dígitos numéricos.', 'Restricción Numérica')
+    }
   }
 }
 
